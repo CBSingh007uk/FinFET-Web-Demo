@@ -1,114 +1,104 @@
 import streamlit as st
-from PIL import Image, ImageDraw
 import fitz  # PyMuPDF
 import easyocr
-import re
+from PIL import Image
 import numpy as np
+import io
+import traceback
 
-# --- Page Config ---
-st.set_page_config(
-    page_title="FinFET Data Extractor",
-    page_icon="🔬",
-    layout="wide"
-)
+# --- Streamlit Page Config ---
+st.set_page_config(page_title="Data Extractor", layout="wide", page_icon="📄")
 
-# --- Custom CSS for enhanced styling ---
+# --- Custom CSS ---
 st.markdown("""
     <style>
-        /* Gradient background */
         .stApp {
-            background: linear-gradient(135deg, #e0f7fa 0%, #e1bee7 100%);
-            font-family: 'Arial', sans-serif;
+            background: linear-gradient(to bottom right, #f0f9ff, #cbebff);
         }
-
-        /* Buttons */
-        .stButton>button {
-            color: white;
-            background: linear-gradient(90deg, #4CAF50, #81C784);
-            border-radius: 15px;
-            height: 3em;
-            width: 14em;
-            font-size: 18px;
+        header, footer {visibility: hidden;}
+        .main-header {
+            font-size: 2rem;
             font-weight: bold;
-            box-shadow: 2px 2px 8px rgba(0,0,0,0.2);
+            padding: 1rem;
+            text-align: center;
+            color: white;
+            background: linear-gradient(90deg, #0077b6, #00b4d8);
+            border-radius: 12px;
+            margin-bottom: 1rem;
+        }
+        .stButton>button {
+            background-color: #0077b6 !important;
+            color: white !important;
+            border: none;
+            padding: 0.6em 1.2em;
+            border-radius: 8px;
+            font-weight: bold;
             transition: 0.3s;
         }
         .stButton>button:hover {
-            background: linear-gradient(90deg, #81C784, #4CAF50);
+            background-color: #023e8a !important;
             transform: scale(1.05);
-        }
-
-        /* Card-style sections */
-        .stText, .stMarkdown {
-            background: rgba(255, 255, 255, 0.8);
-            padding: 15px;
-            border-radius: 12px;
-            box-shadow: 2px 2px 10px rgba(0,0,0,0.1);
-            margin-bottom: 10px;
-        }
-
-        /* Headers */
-        h1, h2, h3 {
-            color: #4A148C;
-            font-family: 'Helvetica', sans-serif;
         }
     </style>
 """, unsafe_allow_html=True)
 
-# --- Logo & Title ---
-st.image("logo.png", width=180)
-st.markdown("<h1 style='text-align:center'>FinFET Data Extractor</h1>", unsafe_allow_html=True)
-st.markdown("<h3 style='text-align:center'>Upload PDF/Image → OCR → Extract Parameters</h3>", unsafe_allow_html=True)
+# --- Sidebar ---
+st.sidebar.title("Navigation")
+page = st.sidebar.radio("Go to", ["Extract Text", "About"])
 
-# --- File uploader ---
-uploaded_file = st.file_uploader("Upload a PDF or Image", type=["pdf", "png", "jpg", "jpeg"])
-use_synthetic = False
+st.sidebar.markdown("---")
+st.sidebar.info("Powered by **Streamlit + EasyOCR + PyMuPDF**")
 
-if uploaded_file is None:
-    if st.button("Use Synthetic Demo"):
-        use_synthetic = True
-        img = Image.new("RGB", (500, 200), color=(255, 255, 255))
-        draw = ImageDraw.Draw(img)
-        text = "Device Type: FinFET\nLg = 16 nm\nHfin = 35 nm\nEOT = 0.9 nm"
-        draw.text((20, 50), text, fill=(0, 0, 0))
-        st.info("Using synthetic demo image")
-else:
-    if uploaded_file.type == "application/pdf":
-        pdf_bytes = uploaded_file.read()
-        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-        page = doc[0]
-        pix = page.get_pixmap(dpi=200)
-        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-    else:
-        img = Image.open(uploaded_file)
+# --- Main Header ---
+st.markdown('<div class="main-header">📄 Data Extractor</div>', unsafe_allow_html=True)
 
-# --- Display image & OCR ---
-if uploaded_file is not None or use_synthetic:
-    st.image(img, caption="Input Image", use_container_width=True)
+if page == "Extract Text":
+    uploaded_file = st.file_uploader("Upload a PDF", type=["pdf"])
 
-    # --- OCR using EasyOCR ---
-    reader = easyocr.Reader(['en'], gpu=False)
-    img_array = np.array(img)
-    text_results = reader.readtext(img_array)
-    text = "\n".join([t[1] for t in text_results])
+    if uploaded_file:
+        try:
+            st.write("### Processing File...")
+            file_bytes = uploaded_file.read()
 
-    # --- OCR Output Card ---
-    st.subheader("Extracted Text")
-    st.markdown(f"<div style='background: rgba(255,255,255,0.85); padding:15px; border-radius:12px;'>{text.replace(chr(10), '<br>')}</div>", unsafe_allow_html=True)
+            # Step 1: Load PDF
+            doc = fitz.open(stream=file_bytes, filetype="pdf")
+            st.success(f"Loaded PDF with {doc.page_count} pages")
 
-    # --- Parameter Extraction Card ---
-    st.subheader("Extracted Parameters")
-    params = {}
-    for key in ["Lg", "Hfin", "EOT"]:
-        match = re.search(rf"{key}\s*=\s*([\d.]+)", text)
-        if match:
-            params[key] = f"{match.group(1)} nm"
+            # Step 2: Initialize OCR
+            with st.spinner("Loading EasyOCR model..."):
+                reader = easyocr.Reader(['en'])
 
-    if params:
-        param_text = "".join([f"- **{k}**: {v}<br>" for k,v in params.items()])
-        st.markdown(f"<div style='background: rgba(255,255,255,0.85); padding:15px; border-radius:12px;'>{param_text}</div>", unsafe_allow_html=True)
-    else:
-        st.markdown("<div style='background: rgba(255,255,255,0.85); padding:15px; border-radius:12px;'>No parameters detected. Using synthetic demo.</div>", unsafe_allow_html=True)
+            # Step 3: Extract text page-by-page
+            all_text = []
+            progress = st.progress(0)
+            for i, page in enumerate(doc):
+                pix = page.get_pixmap()
+                img = Image.open(io.BytesIO(pix.tobytes("png")))
+                img_np = np.array(img)
+                result = reader.readtext(img_np)
+                page_text = " ".join([r[1] for r in result])
+                all_text.append(f"--- Page {i+1} ---\n{page_text}\n")
+                progress.progress((i+1)/len(doc))
+
+            st.success("Extraction complete!")
+            st.text_area("Extracted Text", "\n\n".join(all_text), height=400)
+
+        except Exception as e:
+            st.error("### Processing error occurred!")
+            st.code(traceback.format_exc())  # Show full traceback for debugging
 
 else:
-    st.info("Upload a file or use the synthetic demo button to begin.")
+    st.subheader("About This App")
+    st.markdown("""
+        **Data Extractor** lets you:
+        - Upload any PDF document  
+        - Convert each page into an image  
+        - Use **EasyOCR** to read text directly from page images  
+        - Display extracted text in a clean interface  
+
+        **Tech stack:**  
+        - [Streamlit](https://streamlit.io) for the web UI  
+        - [PyMuPDF](https://pymupdf.readthedocs.io/) to parse PDFs  
+        - [EasyOCR](https://github.com/JaidedAI/EasyOCR) for text recognition  
+    """)
+
