@@ -8,3 +8,5 @@ torchvision
 torchaudio
 reportlab
 numpy
+openpyxl
+Pillow
