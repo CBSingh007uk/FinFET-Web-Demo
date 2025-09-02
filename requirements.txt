@@ -1,7 +1,8 @@
 streamlit
-Pillow
-PyMuPDF
+pymupdf
 easyocr
-numpy
+pandas
+openpyxl
 torch
 torchvision
+torchaudio
