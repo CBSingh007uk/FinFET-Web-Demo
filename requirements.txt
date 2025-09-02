@@ -2,3 +2,4 @@ streamlit
 Pillow
 fitz
 easyocr
+numpy
