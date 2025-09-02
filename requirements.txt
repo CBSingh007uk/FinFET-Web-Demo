@@ -3,3 +3,5 @@ Pillow
 PyMuPDF
 easyocr
 numpy
+torch
+torchvision
