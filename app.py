@@ -1,104 +1,155 @@
 import streamlit as st
 import fitz  # PyMuPDF
 import easyocr
-from PIL import Image
-import numpy as np
+import pandas as pd
 import io
-import traceback
+from datetime import datetime
 
-# --- Streamlit Page Config ---
-st.set_page_config(page_title="Data Extractor", layout="wide", page_icon="📄")
+# ---------- PAGE CONFIG ----------
+st.set_page_config(
+    page_title="Data Extractor Demo",
+    page_icon="📊",
+    layout="wide"
+)
 
-# --- Custom CSS ---
+# ---------- CUSTOM CSS ----------
 st.markdown("""
-    <style>
-        .stApp {
-            background: linear-gradient(to bottom right, #f0f9ff, #cbebff);
-        }
-        header, footer {visibility: hidden;}
-        .main-header {
-            font-size: 2rem;
-            font-weight: bold;
-            padding: 1rem;
-            text-align: center;
-            color: white;
-            background: linear-gradient(90deg, #0077b6, #00b4d8);
-            border-radius: 12px;
-            margin-bottom: 1rem;
-        }
-        .stButton>button {
-            background-color: #0077b6 !important;
-            color: white !important;
-            border: none;
-            padding: 0.6em 1.2em;
-            border-radius: 8px;
-            font-weight: bold;
-            transition: 0.3s;
-        }
-        .stButton>button:hover {
-            background-color: #023e8a !important;
-            transform: scale(1.05);
-        }
-    </style>
+<style>
+    /* Dark background */
+    .stApp {
+        background-color: #0e1117;
+        color: white;
+    }
+    /* Gradient header */
+    .gradient-header {
+        font-size: 28px;
+        font-weight: bold;
+        background: linear-gradient(90deg, #ff4b1f, #1fddff);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        padding-bottom: 0.5rem;
+    }
+    /* Styled buttons */
+    div.stButton > button {
+        background: linear-gradient(90deg, #ff4b1f, #1fddff);
+        color: white;
+        font-weight: bold;
+        border: none;
+        border-radius: 12px;
+        padding: 0.5rem 1rem;
+    }
+    /* Sidebar logo */
+    [data-testid="stSidebar"] {
+        background-color: #1a1c23;
+    }
+</style>
 """, unsafe_allow_html=True)
 
-# --- Sidebar ---
-st.sidebar.title("Navigation")
-page = st.sidebar.radio("Go to", ["Extract Text", "About"])
+# ---------- LOGO ----------
+st.sidebar.image("https://upload.wikimedia.org/wikipedia/commons/thumb/a/a7/React-icon.svg/512px-React-icon.svg.png", width=120)
+st.sidebar.title("Data Extractor")
+st.sidebar.markdown("**Demo for poster presentation**")
 
-st.sidebar.markdown("---")
-st.sidebar.info("Powered by **Streamlit + EasyOCR + PyMuPDF**")
+# ---------- SIDEBAR NAVIGATION ----------
+page = st.sidebar.radio("Navigate", ["Home", "Upload", "Demo"])
 
-# --- Main Header ---
-st.markdown('<div class="main-header">📄 Data Extractor</div>', unsafe_allow_html=True)
+# ---------- OCR + PDF HELPER ----------
+reader = easyocr.Reader(['en'], gpu=False)
 
-if page == "Extract Text":
-    uploaded_file = st.file_uploader("Upload a PDF", type=["pdf"])
+def extract_text_from_pdf(file_bytes):
+    text_output = ""
+    try:
+        doc = fitz.open(stream=file_bytes, filetype="pdf")
+        for page in doc:
+            text_output += page.get_text()
+    except Exception as e:
+        st.error("PDF parsing failed. Check file format.")
+        st.text(f"DEBUG: {e}")
+    return text_output
 
-    if uploaded_file:
-        try:
-            st.write("### Processing File...")
-            file_bytes = uploaded_file.read()
+def ocr_from_pdf_images(file_bytes):
+    text_output = ""
+    try:
+        doc = fitz.open(stream=file_bytes, filetype="pdf")
+        for page_index in range(len(doc)):
+            pix = doc[page_index].get_pixmap()
+            img_bytes = pix.tobytes("png")
+            results = reader.readtext(img_bytes, detail=0)
+            text_output += "\n".join(results) + "\n"
+    except Exception as e:
+        st.error("OCR failed.")
+        st.text(f"DEBUG: {e}")
+    return text_output
 
-            # Step 1: Load PDF
-            doc = fitz.open(stream=file_bytes, filetype="pdf")
-            st.success(f"Loaded PDF with {doc.page_count} pages")
+def synthetic_parameters():
+    data = {
+        "Gate Length (nm)": [12, 14, 16],
+        "Fin Height (nm)": [35, 40, 45],
+        "EOT (nm)": [0.7, 0.65, 0.6],
+        "Ion (µA/µm)": [1020, 980, 1100],
+        "Ioff (nA/µm)": [5, 7, 6]
+    }
+    return pd.DataFrame(data)
 
-            # Step 2: Initialize OCR
-            with st.spinner("Loading EasyOCR model..."):
-                reader = easyocr.Reader(['en'])
-
-            # Step 3: Extract text page-by-page
-            all_text = []
-            progress = st.progress(0)
-            for i, page in enumerate(doc):
-                pix = page.get_pixmap()
-                img = Image.open(io.BytesIO(pix.tobytes("png")))
-                img_np = np.array(img)
-                result = reader.readtext(img_np)
-                page_text = " ".join([r[1] for r in result])
-                all_text.append(f"--- Page {i+1} ---\n{page_text}\n")
-                progress.progress((i+1)/len(doc))
-
-            st.success("Extraction complete!")
-            st.text_area("Extracted Text", "\n\n".join(all_text), height=400)
-
-        except Exception as e:
-            st.error("### Processing error occurred!")
-            st.code(traceback.format_exc())  # Show full traceback for debugging
-
-else:
-    st.subheader("About This App")
-    st.markdown("""
-        **Data Extractor** lets you:
-        - Upload any PDF document  
-        - Convert each page into an image  
-        - Use **EasyOCR** to read text directly from page images  
-        - Display extracted text in a clean interface  
-
-        **Tech stack:**  
-        - [Streamlit](https://streamlit.io) for the web UI  
-        - [PyMuPDF](https://pymupdf.readthedocs.io/) to parse PDFs  
-        - [EasyOCR](https://github.com/JaidedAI/EasyOCR) for text recognition  
+# ---------- PAGES ----------
+if page == "Home":
+    st.markdown('<div class="gradient-header">Welcome to Data Extractor</div>', unsafe_allow_html=True)
+    st.write("""
+    This web app demonstrates:
+    - PDF text + image OCR extraction  
+    - Automatic FinFET parameter detection (synthetic demo)  
+    - Export results as CSV/XLSX  
+    - Mobile-ready via Streamlit Community Cloud  
     """)
 
+elif page == "Upload":
+    st.markdown('<div class="gradient-header">Upload PDF to Extract Parameters</div>', unsafe_allow_html=True)
+    uploaded_file = st.file_uploader("Upload a PDF", type=["pdf"])
+    if uploaded_file:
+        try:
+            with st.spinner("Extracting text and parameters..."):
+                # Extract text
+                pdf_text = extract_text_from_pdf(uploaded_file.read())
+                # OCR from images too
+                uploaded_file.seek(0)
+                ocr_text = ocr_from_pdf_images(uploaded_file.read())
+                combined_text = pdf_text + "\n" + ocr_text
+
+                st.subheader("Raw Extracted Text")
+                st.text_area("Combined Text", combined_text, height=200)
+
+                # For demo: Generate synthetic parameters
+                df = synthetic_parameters()
+                st.subheader("Extracted Parameters (Synthetic)")
+                st.dataframe(df)
+
+                # Download options
+                csv_bytes = df.to_csv(index=False).encode()
+                xlsx_io = io.BytesIO()
+                df.to_excel(xlsx_io, index=False)
+                xlsx_io.seek(0)
+
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.download_button("Download CSV", csv_bytes, "parameters.csv", "text/csv")
+                with col2:
+                    st.download_button("Download XLSX", xlsx_io, "parameters.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        except Exception as e:
+            st.error("Error processing file.")
+            st.text(f"DEBUG: {e}")
+
+elif page == "Demo":
+    st.markdown('<div class="gradient-header">Synthetic Demo Mode</div>', unsafe_allow_html=True)
+    st.write("Showing sample extracted parameters:")
+    df = synthetic_parameters()
+    st.dataframe(df)
+    csv_bytes = df.to_csv(index=False).encode()
+    xlsx_io = io.BytesIO()
+    df.to_excel(xlsx_io, index=False)
+    xlsx_io.seek(0)
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.download_button("Download CSV", csv_bytes, "demo_parameters.csv", "text/csv")
+    with col2:
+        st.download_button("Download XLSX", xlsx_io, "demo_parameters.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
