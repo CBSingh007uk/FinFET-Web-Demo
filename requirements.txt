@@ -1,6 +1,4 @@
 streamlit
-pillow
-pdf2image
-qrcode[pil]
-PyMuPDF
+Pillow
+fitz
 easyocr
