@@ -1,47 +1,58 @@
+# app.py
 import streamlit as st
-from PIL import Image
+from PIL import Image, ImageDraw
 import pytesseract
+from pdf2image import convert_from_bytes
+import re
+import qrcode
 import io
 
-# Optional: PDF → Image conversion
-from pdf2image import convert_from_bytes
+# --- Page Config ---
+st.set_page_config(
+    page_title="FinFET Data Extractor",
+    page_icon="🔬",
+    layout="centered"
+)
 
-# --- Page config ---
-st.set_page_config(page_title="FinFET Data Extractor", page_icon="🔬", layout="centered")
-
-# --- CSS for colors & buttons ---
+# --- Custom CSS for colorful buttons & background ---
 st.markdown("""
     <style>
-        .main {background-color: #f0f4ff;}
+        .stApp {background-color: #f0f4ff;}
         .stButton>button {
             color: white;
             background-color: #4CAF50;
             border-radius: 12px;
             height: 3em;
-            width: 10em;
+            width: 12em;
             font-size: 18px;
         }
     </style>
 """, unsafe_allow_html=True)
 
 # --- Logo & Title ---
-st.image("logo.png", width=150)
+st.image("logo.png", width=150)  # Replace with your logo
 st.title("FinFET Data Extractor")
 st.markdown("**Upload PDF/Image → OCR → Extract Parameters**")
 
+# --- QR Code for poster ---
+st.subheader("Scan QR Code to Open Live Demo")
+# Replace with your deployed Streamlit app URL
+app_url = "https://your-app.streamlit.app"
+qr_img = qrcode.make(app_url)
+st.image(qr_img, caption="Scan to open the FinFET Data Extractor", use_column_width=False)
+
 # --- File uploader ---
 uploaded_file = st.file_uploader("Upload a PDF or Image", type=["pdf", "png", "jpg", "jpeg"])
-
-# --- Synthetic fallback if no file ---
 use_synthetic = False
+
 if uploaded_file is None:
     if st.button("Use Synthetic Demo"):
         use_synthetic = True
-        # Create synthetic image
-        img = Image.new("RGB", (400, 200), color=(255, 255, 255))
-        from PIL import ImageDraw
+        # Create synthetic image with FinFET parameters
+        img = Image.new("RGB", (500, 200), color=(255, 255, 255))
         draw = ImageDraw.Draw(img)
-        draw.text((10, 80), "Hello Tesseract!", fill=(0, 0, 0))
+        text = "Device Type: FinFET\nLg = 16 nm\nHfin = 35 nm\nEOT = 0.9 nm"
+        draw.text((20, 50), text, fill=(0, 0, 0))
         st.info("Using synthetic demo image")
 else:
     if uploaded_file.type == "application/pdf":
@@ -55,19 +66,24 @@ if uploaded_file is not None or use_synthetic:
     st.image(img, caption="Input Image", use_column_width=True)
 
     # --- OCR ---
-    pytesseract.pytesseract.tesseract_cmd = r"C:\Users\ckushwah\tesseract.exe"  # For local, ignored on hosted
     text = pytesseract.image_to_string(img)
 
     st.subheader("Extracted Text")
     st.text(text)
 
-    # --- Dummy parameter extraction ---
+    # --- Parameter extraction ---
     st.subheader("Extracted Parameters")
-    st.markdown("""
-    - Gate length: **20nm (detected)**  
-    - Fin height: **40nm (detected)**  
-    - EOT: **0.8nm (detected)**  
-    """)
+    params = {}
+    for key in ["Lg", "Hfin", "EOT"]:
+        match = re.search(rf"{key}\s*=\s*([\d.]+)", text)
+        if match:
+            params[key] = f"{match.group(1)} nm"
+
+    if params:
+        for k, v in params.items():
+            st.markdown(f"- **{k}**: {v}")
+    else:
+        st.markdown("No parameters detected. Using synthetic demo.")
 
 else:
-    st.info("Upload a file or use the synthetic demo.")
+    st.info("Upload a file or use the synthetic demo button to begin.")
