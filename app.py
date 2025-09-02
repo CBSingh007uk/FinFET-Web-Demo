@@ -61,7 +61,7 @@ if uploaded_file is not None or use_synthetic:
     st.image(img, caption="Input Image", use_container_width=True)
 
     # --- OCR using EasyOCR ---
-    reader = easyocr.Reader(['en'], gpu=False)  # gpu=False for Cloud
+    reader = easyocr.Reader(['en'], gpu=False)  # GPU=False works on Streamlit Cloud
     img_array = np.array(img)
     text_results = reader.readtext(img_array)
     text = "\n".join([t[1] for t in text_results])
