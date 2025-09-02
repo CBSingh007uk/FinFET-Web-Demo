@@ -36,10 +36,16 @@ st.markdown("**Upload PDF/Image → OCR → Extract Parameters**")
 
 # --- QR Code for poster ---
 st.subheader("Scan QR Code to Open Live Demo")
+
 # Replace with your deployed Streamlit app URL
 app_url = "https://your-app.streamlit.app"
+
+# Generate QR code
 qr_img = qrcode.make(app_url)
-st.image(qr_img, caption="Scan to open the FinFET Data Extractor", use_column_width=False)
+qr_img = qr_img.convert("RGB")  # Ensure proper format for Streamlit
+
+# Display QR code
+st.image(qr_img, caption="Scan to open the FinFET Data Extractor", use_container_width=False)
 
 # --- File uploader ---
 uploaded_file = st.file_uploader("Upload a PDF or Image", type=["pdf", "png", "jpg", "jpeg"])
@@ -63,7 +69,7 @@ else:
 
 # --- Display image & OCR ---
 if uploaded_file is not None or use_synthetic:
-    st.image(img, caption="Input Image", use_column_width=True)
+    st.image(img, caption="Input Image", use_container_width=True)
 
     # --- OCR ---
     text = pytesseract.image_to_string(img)
