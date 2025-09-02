@@ -3,3 +3,4 @@ pillow
 pytesseract
 pdf2image
 qrcode[pil]
+PyMuPDF
