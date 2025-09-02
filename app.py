@@ -2,151 +2,166 @@ import streamlit as st
 import fitz  # PyMuPDF
 import easyocr
 import pandas as pd
+import numpy as np
 import io
-from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image
-from reportlab.lib.styles import getSampleStyleSheet
+from PIL import Image, ImageDraw, ImageFont
 
-# --- PAGE CONFIG ---
-st.set_page_config(page_title="FinFET Data Extractor", layout="wide")
+# -----------------------------
+# Helper: auto text color detection
+# -----------------------------
+def get_contrasting_text_color(bg_color):
+    # bg_color is hex (e.g. "#123456")
+    bg_color = bg_color.lstrip('#')
+    r, g, b = tuple(int(bg_color[i:i+2], 16) for i in (0, 2, 4))
+    luminance = (0.299 * r + 0.587 * g + 0.114 * b)
+    return "#FFFFFF" if luminance < 128 else "#000000"
 
-# --- CUSTOM STYLING ---
-st.markdown("""
-    <style>
-    body {
-        background-color: #121212;
-        color: #FFFFFF;
-    }
-    .stApp {
-        background: linear-gradient(135deg, #0F2027, #203A43, #2C5364);
-        color: #FFFFFF;
-    }
-    .stButton>button {
-        background-color: #1F6FEB;
-        color: white;
-        border-radius: 8px;
-        padding: 0.5em 1em;
-        font-weight: bold;
-    }
-    .stSidebar {
-        background-color: #1E1E1E !important;
-        color: #FFFFFF;
-    }
-    .block-container {
-        color: #FFFFFF;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-# --- HEADER ---
-st.markdown("<h1 style='text-align:center; color:white;'>FinFET Data Extractor</h1>", unsafe_allow_html=True)
-st.markdown("<h4 style='text-align:center; color:#BBBBBB;'>Upload PDF/Image or Use Synthetic Demo</h4>", unsafe_allow_html=True)
-
-# --- SIDEBAR ---
-st.sidebar.image("logo.png", use_column_width=True)
-st.sidebar.markdown("### Navigation")
-demo_mode = st.sidebar.checkbox("Use Synthetic Demo", value=True)
-st.sidebar.markdown("---")
-st.sidebar.markdown("**Output Options:**")
-
-# --- FILE UPLOAD ---
-uploaded_file = st.file_uploader("Upload PDF or Image", type=["pdf", "png", "jpg", "jpeg"])
-
-# --- OCR READER ---
-reader = easyocr.Reader(['en'])
-
-# --- DATA EXTRACTION FUNCTION ---
-def extract_text_from_pdf(file):
-    text_blocks = []
+# -----------------------------
+# Helper: extract text from PDF
+# -----------------------------
+def extract_text_from_pdf(file_bytes):
     try:
-        pdf = fitz.open(stream=file.read(), filetype="pdf")
+        pdf = fitz.open(stream=file_bytes, filetype="pdf")
+        text = ""
         for page in pdf:
-            text_blocks.append(page.get_text())
-        return "\n".join(text_blocks)
+            text += page.get_text()
+        return text
     except Exception as e:
-        st.error(f"PDF Extraction Error: {e}")
+        st.error(f"Error reading PDF: {e}")
         return ""
 
-def extract_text_from_image(file):
-    try:
-        results = reader.readtext(file.read())
-        return "\n".join([res[1] for res in results])
-    except Exception as e:
-        st.error(f"Image OCR Error: {e}")
-        return ""
+# -----------------------------
+# Helper: synthetic parameter extractor
+# -----------------------------
+def extract_parameters(text):
+    # In a real app: NLP + regex + ML
+    # For demo: return synthetic data
+    return pd.DataFrame({
+        "Parameter": ["Lg (nm)", "Hfin (nm)", "EOT (nm)", "Id (uA/um)", "Vth (V)"],
+        "Value": [12, 35, 0.8, 420, 0.42]
+    })
 
-def parse_parameters(text):
-    # --- Fake parser for demo ---
-    return {
-        "Lg (nm)": 14,
-        "Hfin (nm)": 35,
-        "EOT (nm)": 0.8,
-        "Id (µA/µm)": 1200
-    }
+# -----------------------------
+# Helper: export dataframe to PDF with logo
+# -----------------------------
+def export_pdf_with_logo(df, logo_path="logo.png"):
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Image as RLImage, Spacer
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import inch
 
-# --- MAIN LOGIC ---
-if demo_mode:
-    st.info("**Demo Mode Active** – Using synthetic FinFET data.")
-    extracted_text = "Synthetic Id-Vg data for FinFET: Lg=14nm, Hfin=35nm, EOT=0.8nm, Id=1200uA/um"
-else:
-    if uploaded_file:
-        if uploaded_file.name.endswith(".pdf"):
-            extracted_text = extract_text_from_pdf(uploaded_file)
-        else:
-            extracted_text = extract_text_from_image(uploaded_file)
-    else:
-        st.warning("Upload a file or enable Demo Mode.")
-        st.stop()
-
-# --- PARAMETER EXTRACTION ---
-parameters = parse_parameters(extracted_text)
-df = pd.DataFrame(list(parameters.items()), columns=["Parameter", "Value"])
-
-# --- DISPLAY RESULTS ---
-st.subheader("Extracted Parameters")
-st.dataframe(df, use_container_width=True)
-
-# --- DOWNLOAD OUTPUT ---
-output_format = st.sidebar.radio("Select Export Format:", ["Excel", "CSV", "PDF"])
-st.sidebar.markdown("Click below to download:")
-
-def download_excel():
-    buf = io.BytesIO()
-    df.to_excel(buf, index=False)
-    buf.seek(0)
-    return buf
-
-def download_csv():
-    buf = io.BytesIO()
-    df.to_csv(buf, index=False)
-    buf.seek(0)
-    return buf
-
-def download_pdf_with_logo():
-    buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4)
-    styles = getSampleStyleSheet()
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
     elements = []
-    elements.append(Paragraph("<b>FinFET Extracted Parameters</b>", styles['Title']))
-    elements.append(Spacer(1, 20))
-    for _, row in df.iterrows():
-        elements.append(Paragraph(f"{row['Parameter']}: {row['Value']}", styles['Normal']))
-    elements.append(Spacer(1, 20))
+
+    # Add logo at top
     try:
-        elements.append(Image("logo.png", width=100, height=100))
+        logo = RLImage(logo_path, width=1.5*inch, height=1.5*inch)
+        elements.append(logo)
+        elements.append(Spacer(1, 0.2*inch))
     except:
-        elements.append(Paragraph("Logo not found.", styles['Normal']))
+        pass  # no logo
+
+    # Add table
+    data = [df.columns.tolist()] + df.values.tolist()
+    table = Table(data)
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#333333")),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('BACKGROUND', (0,1), (-1,-1), colors.HexColor("#DDDDDD")),
+        ('GRID', (0,0), (-1,-1), 1, colors.black),
+    ]))
+    elements.append(table)
     doc.build(elements)
-    buf.seek(0)
-    return buf
+    buffer.seek(0)
+    return buffer
 
-if output_format == "Excel":
-    st.sidebar.download_button("Download Excel", download_excel(), "finfet_data.xlsx")
-elif output_format == "CSV":
-    st.sidebar.download_button("Download CSV", download_csv(), "finfet_data.csv")
+# -----------------------------
+# Streamlit page config
+# -----------------------------
+st.set_page_config(page_title="FinFET Parameter Extractor", layout="wide")
+
+# -----------------------------
+# Sidebar with logo
+# -----------------------------
+st.sidebar.image("logo.png", width=150)
+st.sidebar.title("FinFET Data Extractor")
+st.sidebar.markdown("Upload a PDF or use the demo mode below.")
+demo_mode = st.sidebar.checkbox("Use synthetic demo data", value=True)
+
+# -----------------------------
+# Page background + gradient header
+# -----------------------------
+bg_color = "#0A0A0A"  # dark background
+text_color = get_contrasting_text_color(bg_color)
+header_gradient = "linear-gradient(90deg, #0D47A1, #1976D2)"
+
+page_bg_css = f"""
+<style>
+[data-testid="stAppViewContainer"] > .main {{
+    background-color: {bg_color};
+    color: {text_color};
+}}
+h1, h2, h3, h4, h5, h6, p, div, span {{
+    color: {text_color} !important;
+}}
+[data-testid="stHeader"] {{
+    background: {header_gradient};
+}}
+.stButton>button {{
+    border-radius: 10px;
+    background: #1976D2;
+    color: white;
+    font-weight: bold;
+    padding: 0.5em 1em;
+}}
+.stDownloadButton>button {{
+    border-radius: 10px;
+    background: #388E3C;
+    color: white;
+    font-weight: bold;
+    padding: 0.5em 1em;
+}}
+</style>
+"""
+st.markdown(page_bg_css, unsafe_allow_html=True)
+
+# -----------------------------
+# Main app
+# -----------------------------
+st.title("📊 FinFET Parameter Extractor")
+
+if demo_mode:
+    st.info("Demo mode enabled — using synthetic data.")
+    text = "Synthetic PDF content..."
+    df = extract_parameters(text)
+    st.dataframe(df)
 else:
-    st.sidebar.download_button("Download PDF", download_pdf_with_logo(), "finfet_data.pdf")
+    uploaded_file = st.file_uploader("Upload a PDF file", type=["pdf"])
+    if uploaded_file is not None:
+        st.info("Extracting data from PDF...")
+        pdf_text = extract_text_from_pdf(uploaded_file.read())
+        if pdf_text.strip():
+            df = extract_parameters(pdf_text)
+            st.dataframe(df)
+        else:
+            df = None
+            st.warning("No text detected in the uploaded PDF.")
+    else:
+        df = None
 
-# --- DEBUG SECTION ---
-with st.expander("Debug Info"):
-    st.text_area("Raw Extracted Text", extracted_text, height=200)
+# -----------------------------
+# Download section
+# -----------------------------
+if demo_mode or df is not None:
+    st.subheader("Download Extracted Data")
+    csv = df.to_csv(index=False).encode("utf-8")
+    st.download_button("Download CSV", csv, "finfet_data.csv", "text/csv")
+    xlsx = io.BytesIO()
+    with pd.ExcelWriter(xlsx, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name="FinFET Data")
+    st.download_button("Download Excel", xlsx.getvalue(), "finfet_data.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+    pdf_file = export_pdf_with_logo(df)
+    st.download_button("Download PDF (with logo)", pdf_file, "finfet_data.pdf", "application/pdf")
