@@ -1,5 +1,5 @@
 streamlit
 Pillow
-fitz
+PyMuPDF
 easyocr
 numpy
