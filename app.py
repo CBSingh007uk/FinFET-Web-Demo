@@ -2,9 +2,8 @@
 import streamlit as st
 from PIL import Image, ImageDraw
 import pytesseract
-from pdf2image import convert_from_bytes
+import fitz  # PyMuPDF
 import re
-import qrcode
 import io
 
 # --- Page Config ---
@@ -34,19 +33,6 @@ st.image("logo.png", width=150)  # Replace with your logo
 st.title("FinFET Data Extractor")
 st.markdown("**Upload PDF/Image → OCR → Extract Parameters**")
 
-# --- QR Code for poster ---
-st.subheader("Scan QR Code to Open Live Demo")
-
-# Replace with your deployed Streamlit app URL
-app_url = "https://your-app.streamlit.app"
-
-# Generate QR code
-qr_img = qrcode.make(app_url)
-qr_img = qr_img.convert("RGB")  # Ensure proper format for Streamlit
-
-# Display QR code
-#st.image(qr_img, caption="Scan to open the FinFET Data Extractor", use_container_width=False)
-
 # --- File uploader ---
 uploaded_file = st.file_uploader("Upload a PDF or Image", type=["pdf", "png", "jpg", "jpeg"])
 use_synthetic = False
@@ -62,8 +48,11 @@ if uploaded_file is None:
         st.info("Using synthetic demo image")
 else:
     if uploaded_file.type == "application/pdf":
-        images = convert_from_bytes(uploaded_file.read())
-        img = images[0]  # Take first page
+        pdf_bytes = uploaded_file.read()
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        page = doc[0]  # first page
+        pix = page.get_pixmap(dpi=200)
+        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
     else:
         img = Image.open(uploaded_file)
 
