@@ -1,10 +1,10 @@
 # app.py
 import streamlit as st
 from PIL import Image, ImageDraw
-import pytesseract
 import fitz  # PyMuPDF
+import easyocr
 import re
-import io
+import numpy as np
 
 # --- Page Config ---
 st.set_page_config(
@@ -60,8 +60,11 @@ else:
 if uploaded_file is not None or use_synthetic:
     st.image(img, caption="Input Image", use_container_width=True)
 
-    # --- OCR ---
-    text = pytesseract.image_to_string(img)
+    # --- OCR using EasyOCR ---
+    reader = easyocr.Reader(['en'], gpu=False)  # gpu=False for Cloud
+    img_array = np.array(img)
+    text_results = reader.readtext(img_array)
+    text = "\n".join([t[1] for t in text_results])
 
     st.subheader("Extracted Text")
     st.text(text)
