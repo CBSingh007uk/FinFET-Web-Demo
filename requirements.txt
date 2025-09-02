@@ -10,3 +10,4 @@ reportlab
 numpy
 openpyxl
 Pillow
+qrcode
