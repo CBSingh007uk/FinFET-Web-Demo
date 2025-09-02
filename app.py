@@ -45,7 +45,7 @@ qr_img = qrcode.make(app_url)
 qr_img = qr_img.convert("RGB")  # Ensure proper format for Streamlit
 
 # Display QR code
-st.image(qr_img, caption="Scan to open the FinFET Data Extractor", use_container_width=False)
+#st.image(qr_img, caption="Scan to open the FinFET Data Extractor", use_container_width=False)
 
 # --- File uploader ---
 uploaded_file = st.file_uploader("Upload a PDF or Image", type=["pdf", "png", "jpg", "jpeg"])
