@@ -11,3 +11,6 @@ numpy
 openpyxl
 Pillow
 qrcode
+matplotlib
+fpdf
+xlsxwriter
