@@ -10,10 +10,7 @@ from reportlab.lib.units import inch
 from PIL import Image
 import numpy as np
 import qrcode
-
-
 import matplotlib.pyplot as plt
-
 
 def synthetic_parameters():
     # IRDS-aligned synthetic FinFET dataset for 3–5 nm nodes
