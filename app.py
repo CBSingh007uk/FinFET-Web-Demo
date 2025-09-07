@@ -1,80 +1,79 @@
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
-import io
 from fpdf import FPDF
+from PIL import Image, ImageDraw
+import io
 
-# -------------------------------
-# Synthetic Demo Functions
-# -------------------------------
+# ----------------------------
+# Page config
+# ----------------------------
+st.set_page_config(page_title="FinFET Data Extractor", page_icon="🔬", layout="wide")
 
-def synthetic_parameters():
-    """IRDS-aligned synthetic FinFET dataset for 3–5 nm nodes"""
-    data = [
-        {
-            "Node": "5 nm",
-            "Lg (nm)": 12,
-            "Hfin (nm)": 45,
-            "EOT (nm)": 0.55,
-            "ID (A/cm²)": 2.0e4,
-            "Vth (V)": 0.30,
-            "Ion/Ioff": 3.0e6,
-            "gm (µS/µm)": 2800,
-            "Rsd (Ω·µm)": 70,
-            "Cgg (fF/µm)": 1.2,
-            "Delay (ps)": 1.0,
-        },
-        {
-            "Node": "4 nm",
-            "Lg (nm)": 9,
-            "Hfin (nm)": 50,
-            "EOT (nm)": 0.50,
-            "ID (A/cm²)": 2.3e4,
-            "Vth (V)": 0.28,
-            "Ion/Ioff": 4.0e6,
-            "gm (µS/µm)": 3100,
-            "Rsd (Ω·µm)": 60,
-            "Cgg (fF/µm)": 1.4,
-            "Delay (ps)": 0.8,
-        },
-        {
-            "Node": "3 nm",
-            "Lg (nm)": 7,
-            "Hfin (nm)": 55,
-            "EOT (nm)": 0.48,
-            "ID (A/cm²)": 2.6e4,
-            "Vth (V)": 0.25,
-            "Ion/Ioff": 5.0e6,
-            "gm (µS/µm)": 3400,
-            "Rsd (Ω·µm)": 50,
-            "Cgg (fF/µm)": 1.6,
-            "Delay (ps)": 0.6,
-        },
-    ]
-    return pd.DataFrame(data)
+# ----------------------------
+# Sidebar
+# ----------------------------
+st.sidebar.title("Navigation")
+page = st.sidebar.radio("Go to", ["Home", "Synthetic Demo"])
 
+# ----------------------------
+# CSS Styles
+# ----------------------------
+st.markdown("""
+    <style>
+    .stApp {
+        background-color: #2a2a2a;
+        color: #e0e0e0;
+    }
+    .css-18e3th9 {
+        background-color: #222222;
+    }
+    .stButton>button {
+        background: linear-gradient(90deg, #4CAF50, #45a049);
+        color: white;
+        border-radius: 10px;
+        font-size: 16px;
+        padding: 0.5em 1.5em;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
-def export_excel(df):
-    """Export dataframe to Excel"""
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-        df.to_excel(writer, index=False, sheet_name="FinFET_Data")
-    return output.getvalue()
+# ----------------------------
+# Header with gradient
+# ----------------------------
+st.markdown("""
+    <h1 style='background: linear-gradient(to right, #4CAF50, #45a049);
+               -webkit-background-clip: text;
+               -webkit-text-fill-color: transparent;
+               font-weight: bold;'>FinFET Data Extractor</h1>
+    <p>Upload PDF/Image → OCR → Extract Parameters</p>
+""", unsafe_allow_html=True)
 
+# ----------------------------
+# Logo
+# ----------------------------
+try:
+    logo = Image.open("logo.png")
+    st.image(logo, width=150)
+except:
+    st.warning("Logo not found. Place logo.png in app folder.")
 
+# ----------------------------
+# Utility: Export PDF
+# ----------------------------
 def export_pdf(df, logo_path="logo.png"):
-    """Export dataframe to PDF with logo"""
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", "B", 16)
 
-    # Add logo if available
+    # Add logo
     try:
-        pdf.image(logo_path, 10, 8, 33)  # x, y, width
+        pdf.image(logo_path, 10, 8, 33)
     except:
         pass
 
-    pdf.cell(200, 10, "Synthetic FinFET Parameters (3–5 nm)", ln=True, align="C")
+    # ASCII-safe title
+    title_safe = "Synthetic FinFET Parameters (3-5 nm)"
+    pdf.cell(200, 10, title_safe, ln=True, align="C")
     pdf.ln(20)
 
     pdf.set_font("Arial", size=10)
@@ -82,90 +81,62 @@ def export_pdf(df, logo_path="logo.png"):
 
     # Header
     for col in df.columns:
-        pdf.cell(col_width, 10, col, border=1)
+        safe_col = col.encode("latin1", "replace").decode("latin1")
+        pdf.cell(col_width, 10, safe_col, border=1)
     pdf.ln()
 
     # Rows
     for _, row in df.iterrows():
         for val in row:
-            pdf.cell(col_width, 10, str(val), border=1)
+            safe_val = str(val).encode("latin1", "replace").decode("latin1")
+            pdf.cell(col_width, 10, safe_val, border=1)
         pdf.ln()
 
     return pdf.output(dest="S").encode("latin1")
 
-
+# ----------------------------
+# Synthetic Demo Function
+# ----------------------------
 def show_synthetic_demo():
-    st.subheader("📊 Synthetic Demo (3–5 nm IRDS-aligned FinFET Parameters)")
-    df = synthetic_parameters()
+    # Example 3–5 nm FinFET parameters
+    data = {
+        "Lg (nm)": [3, 4, 5],
+        "Hfin (nm)": [25, 28, 30],
+        "EOT (nm)": [0.7, 0.75, 0.8],
+        "ID (A/cm2)": [1.2e5, 1.5e5, 1.8e5],
+        "Vth (V)": [0.25, 0.26, 0.27],
+        "Ion/Ioff": [1.2e6, 1.3e6, 1.5e6],
+        "gm (mS/µm)": [1.1, 1.2, 1.3],
+        "Rsd (Ω·µm)": [150, 140, 130],
+        "Cgg (fF/µm)": [2.5, 2.6, 2.7],
+        "Delay (ps)": [12, 11.5, 11]
+    }
+    df = pd.DataFrame(data)
+    st.subheader("Synthetic FinFET Parameters")
     st.dataframe(df, use_container_width=True)
 
-    # Scaling plots
-    st.markdown("### 📈 Scaling Trends")
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    # Download options
+    csv_bytes = df.to_csv(index=False).encode("utf-8")
+    excel_buffer = io.BytesIO()
+    with pd.ExcelWriter(excel_buffer, engine="xlsxwriter") as writer:
+        df.to_excel(writer, index=False)
+    excel_bytes = excel_buffer.getvalue()
+    pdf_bytes = export_pdf(df)
 
-    axes[0].plot(df["Lg (nm)"], df["gm (µS/µm)"], marker="o", color="cyan", linewidth=2)
-    axes[0].invert_xaxis()
-    axes[0].set_xlabel("Lg (nm)")
-    axes[0].set_ylabel("gm (µS/µm)")
-    axes[0].set_title("Lg vs gm")
+    col1, col2, col3 = st.columns(3)
+    col1.download_button("Download CSV", csv_bytes, file_name="synthetic_finfet.csv")
+    col2.download_button("Download Excel", excel_bytes, file_name="synthetic_finfet.xlsx")
+    col3.download_button("Download PDF", pdf_bytes, file_name="synthetic_finfet.pdf")
 
-    axes[1].plot(df["Vth (V)"], df["Ion/Ioff"], marker="s", color="magenta", linewidth=2)
-    axes[1].set_xlabel("Vth (V)")
-    axes[1].set_ylabel("Ion/Ioff")
-    axes[1].set_title("Vth vs Ion/Ioff")
+# ----------------------------
+# Main App
+# ----------------------------
+if page == "Home":
+    st.info("Upload a PDF or image to extract FinFET parameters (OCR not implemented in this demo).")
+    st.warning("Use 'Synthetic Demo' for full functional demo.")
 
-    st.pyplot(fig)
-
-    # Downloads
-    st.markdown("### 💾 Export Data")
-    st.download_button("⬇️ Download CSV", df.to_csv(index=False), "synthetic_finfet.csv", "text/csv")
-    st.download_button("⬇️ Download Excel", export_excel(df), "synthetic_finfet.xlsx")
-    st.download_button("⬇️ Download PDF", export_pdf(df), "synthetic_finfet.pdf")
-
-
-# -------------------------------
-# Streamlit Page Layout
-# -------------------------------
-
-# Page config
-st.set_page_config(page_title="FinFET Data Extractor", layout="wide")
-
-# Custom CSS
-st.markdown(
-    """
-    <style>
-        body {
-            background: linear-gradient(135deg, #1c1c1c, #2e2e2e);
-            color: #f0f0f0;
-        }
-        .stButton button {
-            background-color: #4CAF50;
-            color: white;
-            border-radius: 10px;
-            padding: 0.6em 1.2em;
-            border: none;
-        }
-        .stButton button:hover {
-            background-color: #45a049;
-        }
-        .css-18e3th9, .css-1d391kg {  /* Sidebar text */
-            color: #f0f0f0 !important;
-        }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-# Header with logo
-st.image("logo.png", width=100)
-st.title("FinFET Data Extractor")
-st.caption("Upload → OCR → Extract Parameters or run Synthetic Demo")
-
-# Sidebar navigation
-menu = ["Synthetic Demo", "Upload & Extract (Coming Soon)"]
-choice = st.sidebar.radio("Navigate", menu)
-
-if choice == "Synthetic Demo":
-    show_synthetic_demo()
-else:
-    st.info("📂 Upload and parameter extraction pipeline will appear here.")
+elif page == "Synthetic Demo":
+    try:
+        show_synthetic_demo()
+    except Exception as e:
+        st.error(f"Error in synthetic demo: {e}")
