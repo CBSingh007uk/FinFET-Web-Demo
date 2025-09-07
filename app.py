@@ -3,7 +3,8 @@ import pandas as pd
 from fpdf import FPDF
 from PIL import Image, ImageDraw
 import io
-
+import numpy as np
+import matplotlib.pyplot as plt
 # ----------------------------
 # Page config
 # ----------------------------
@@ -97,8 +98,6 @@ def export_pdf(df, logo_path="logo.png"):
 # ----------------------------
 # Synthetic Demo Function
 # ----------------------------
-import numpy as np
-import matplotlib.pyplot as plt
 
 def show_synthetic_demo():
     # Example 3–5 nm FinFET parameters
