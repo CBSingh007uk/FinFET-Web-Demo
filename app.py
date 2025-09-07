@@ -10,11 +10,11 @@ from reportlab.lib.units import inch
 from PIL import Image
 import numpy as np
 import qrcode
-import base64
 
 # --- CONFIG ---
 st.set_page_config(page_title="FinFET Data Extractor", layout="wide")
-BACKGROUND_COLOR = "#1E1E2F"   # slightly lighter than pure dark
+BACKGROUND_COLOR = "#1E1E2F"   # slightly lighter dark
+SIDEBAR_COLOR = "#2A2A3D"
 TEXT_COLOR = "#F5F5F5"
 
 # --- UTILITY: automatic text color based on background brightness ---
@@ -24,14 +24,16 @@ def get_contrasting_text_color(hex_color):
     brightness = (r*299 + g*587 + b*114) / 1000
     return "#000000" if brightness > 160 else "#FFFFFF"
 
-# --- STYLE ---
+# --- CUSTOM CSS ---
 st.markdown(
     f"""
     <style>
+        /* Body background & text */
         body {{
             background-color: {BACKGROUND_COLOR};
             color: {get_contrasting_text_color(BACKGROUND_COLOR)};
         }}
+        /* Gradient buttons */
         .stButton>button {{
             background: linear-gradient(90deg, #4b6cb7, #182848);
             color: white;
@@ -39,9 +41,17 @@ st.markdown(
             border: none;
             padding: 0.5rem 1rem;
         }}
-        .stSidebar {{
-            background-color: #2A2A3D;
-            color: white;
+        /* Sidebar background */
+        .css-1d391kg {{
+            background-color: {SIDEBAR_COLOR} !important;
+        }}
+        /* Sidebar text color desktop + mobile */
+        .css-1v3fvcr, .css-1v3fvcr span, .css-1v3fvcr p, .st-bf {{
+            color: {TEXT_COLOR} !important;
+        }}
+        /* Sidebar headers */
+        .css-1k0ckh2 h1, .css-1k0ckh2 h2, .css-1k0ckh2 h3, .css-1k0ckh2 h4 {{
+            color: {TEXT_COLOR} !important;
         }}
     </style>
     """,
@@ -52,16 +62,16 @@ st.markdown(
 st.sidebar.image("logo.png", use_container_width=True)
 st.sidebar.title("Navigation")
 mode = st.sidebar.radio("Choose mode:", ["Upload PDF", "Synthetic Demo"])
-st.sidebar.info("This demo extracts FinFET parameters using OCR + NLP.")
+st.sidebar.info("Upload a PDF or use the synthetic demo to extract FinFET parameters.")
 
 # --- OCR Reader ---
 reader = easyocr.Reader(['en'])
 
-# --- MAIN HEADER ---
+# --- HEADER ---
 st.markdown("<h1 style='text-align:center;'>FinFET Data Extractor</h1>", unsafe_allow_html=True)
 st.write("---")
 
-# --- DATA EXTRACTION FUNCTION ---
+# --- DATA EXTRACTION FUNCTIONS ---
 def extract_text_from_pdf(file):
     text = ""
     with fitz.open(stream=file.read(), filetype="pdf") as doc:
@@ -70,13 +80,12 @@ def extract_text_from_pdf(file):
     return text
 
 def synthetic_parameters():
-    # fake FinFET parameters
     return pd.DataFrame([
         {"Lg (nm)": 14, "Hfin (nm)": 30, "EOT (nm)": 0.9, "Idsat (µA/µm)": 1100},
         {"Lg (nm)": 10, "Hfin (nm)": 40, "EOT (nm)": 0.7, "Idsat (µA/µm)": 1500}
     ])
 
-# --- OUTPUT EXPORTS ---
+# --- EXPORT FUNCTIONS ---
 def export_to_excel(df):
     buf = io.BytesIO()
     df.to_excel(buf, index=False)
@@ -91,7 +100,7 @@ def export_to_pdf(df):
     styles = getSampleStyleSheet()
     elems = []
 
-    # Add logo
+    # Logo embedding
     try:
         logo = RLImage("logo.png", width=1.5*inch, height=1.5*inch)
         elems.append(logo)
@@ -121,7 +130,7 @@ if mode == "Upload PDF":
             st.subheader("Extracted Text Preview")
             st.text_area("Text", text, height=200)
 
-            # Dummy extracted parameters (replace with NLP parsing logic)
+            # Use synthetic extraction for demo
             df = synthetic_parameters()
             st.subheader("Extracted Parameters")
             st.dataframe(df)
