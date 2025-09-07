@@ -65,22 +65,25 @@ def show_synthetic_demo():
     st.subheader("Synthetic Demo (3–5 nm FinFET)")
 
     # Parameters
-    data = {
-        "Lg (nm)": [3, 4, 5],
-        "Hfin (nm)": [25, 28, 30],
-        "EOT (nm)": [0.7, 0.75, 0.8],
-        "ID (A/cm2)": [1.2e5, 1.5e5, 1.8e5],
-        "Vth (V)": [0.25, 0.26, 0.27],
-        "Ion/Ioff": [1.2e6, 1.3e6, 1.5e6],
-        "gm (mS/µm)": [1.1, 1.2, 1.3],
-        "Rsd (Ω·µm)": [150, 140, 130],
-        "Cgg (fF/µm)": [2.5, 2.6, 2.7],
-        "Delay (ps)": [12, 11.5, 11],
-        "Vg (V)": [np.linspace(0, 1, 50) for _ in range(3)]
-    }
+    Lg = [3, 4, 5]
+    Hfin = [25, 28, 30]
+    EOT = [0.7, 0.75, 0.8]
+    ID = [1.2e5, 1.5e5, 1.8e5]
+    Vth = [0.25, 0.26, 0.27]
+    Ion_Ioff = [1.2e6, 1.3e6, 1.5e6]
 
-    # DataFrame for display (exclude Vg)
-    df_display = pd.DataFrame({k: v for k, v in data.items() if k != "Vg"})
+    # Generate Vg for each device
+    Vg_list = [np.linspace(0, 1, 50) for _ in range(len(Lg))]
+
+    # Create DataFrame for display
+    df_display = pd.DataFrame({
+        "Lg (nm)": Lg,
+        "Hfin (nm)": Hfin,
+        "EOT (nm)": EOT,
+        "ID (A/cm2)": ID,
+        "Vth (V)": Vth,
+        "Ion/Ioff": Ion_Ioff
+    })
     st.dataframe(df_display, use_container_width=True)
 
     # ----------------------
@@ -90,9 +93,9 @@ def show_synthetic_demo():
 
     # Ids–Vg curves
     fig1, ax1 = plt.subplots()
-    for i in range(len(data["Lg (nm)"])):
-        ax1.plot(data["Vg"][i], np.linspace(0, data["ID (A/cm2)"][i], len(data["Vg"][i])),
-                 label=f"Lg={data['Lg (nm)'][i]} nm")
+    for i in range(len(Lg)):
+        ax1.plot(Vg_list[i], np.linspace(0, ID[i], len(Vg_list[i])),
+                 label=f"Lg={Lg[i]} nm")
     ax1.set_xlabel("Vg (V)", color='white')
     ax1.set_ylabel("Id (A/cm²)", color='white')
     ax1.set_title("Ids–Vg Curves", color='white')
@@ -104,7 +107,7 @@ def show_synthetic_demo():
 
     # Ion/Ioff vs Lg
     fig2, ax2 = plt.subplots()
-    ax2.plot(df_display["Lg (nm)"], df_display["Ion/Ioff"], marker='o', color='#4CAF50')
+    ax2.plot(Lg, Ion_Ioff, marker='o', color='#4CAF50')
     ax2.set_xlabel("Lg (nm)", color='white')
     ax2.set_ylabel("Ion/Ioff", color='white')
     ax2.set_title("Ion/Ioff vs Gate Length", color='white')
@@ -112,7 +115,6 @@ def show_synthetic_demo():
     fig2.patch.set_facecolor('#1f1f1f')
     ax2.set_facecolor('#272727')
     st.pyplot(fig2)
-
     # ----------------------
     # Download options
     # ----------------------
