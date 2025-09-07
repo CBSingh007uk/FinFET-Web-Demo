@@ -97,6 +97,9 @@ def export_pdf(df, logo_path="logo.png"):
 # ----------------------------
 # Synthetic Demo Function
 # ----------------------------
+import numpy as np
+import matplotlib.pyplot as plt
+
 def show_synthetic_demo():
     # Example 3–5 nm FinFET parameters
     data = {
@@ -109,13 +112,40 @@ def show_synthetic_demo():
         "gm (mS/µm)": [1.1, 1.2, 1.3],
         "Rsd (Ω·µm)": [150, 140, 130],
         "Cgg (fF/µm)": [2.5, 2.6, 2.7],
-        "Delay (ps)": [12, 11.5, 11]
+        "Delay (ps)": [12, 11.5, 11],
+        "Vg (V)": [np.linspace(0, 1, 50) for _ in range(3)]  # gate voltage sweep
     }
-    df = pd.DataFrame(data)
+    df = pd.DataFrame({k: v if not isinstance(v, list) else v[0] for k, v in data.items()})
     st.subheader("Synthetic FinFET Parameters")
     st.dataframe(df, use_container_width=True)
 
+    # ----------------------
+    # Scaling Plots
+    # ----------------------
+    st.subheader("Scaling Plots")
+
+    fig1, ax1 = plt.subplots()
+    for i, row in df.iterrows():
+        ax1.plot(data["Vg"][i], np.linspace(0, row["ID"], 50), label=f"Lg={row['Lg (nm)']} nm")
+    ax1.set_xlabel("Vg (V)")
+    ax1.set_ylabel("Id (A/cm²)")
+    ax1.set_title("Ids–Vg Curves")
+    ax1.grid(True)
+    ax1.legend()
+    st.pyplot(fig1)
+
+    # Example: Ion/Ioff vs Lg
+    fig2, ax2 = plt.subplots()
+    ax2.plot(df["Lg (nm)"], df["Ion/Ioff"], marker='o')
+    ax2.set_xlabel("Lg (nm)")
+    ax2.set_ylabel("Ion/Ioff")
+    ax2.set_title("Ion/Ioff vs Gate Length")
+    ax2.grid(True)
+    st.pyplot(fig2)
+
+    # ----------------------
     # Download options
+    # ----------------------
     csv_bytes = df.to_csv(index=False).encode("utf-8")
     excel_buffer = io.BytesIO()
     with pd.ExcelWriter(excel_buffer, engine="xlsxwriter") as writer:
@@ -127,6 +157,7 @@ def show_synthetic_demo():
     col1.download_button("Download CSV", csv_bytes, file_name="synthetic_finfet.csv")
     col2.download_button("Download Excel", excel_bytes, file_name="synthetic_finfet.xlsx")
     col3.download_button("Download PDF", pdf_bytes, file_name="synthetic_finfet.pdf")
+
 
 # ----------------------------
 # Main App
