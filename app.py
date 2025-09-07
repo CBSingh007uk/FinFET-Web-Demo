@@ -2,150 +2,142 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import seaborn as sns
-from PIL import Image, ImageDraw
-import io
+from io import BytesIO
 from fpdf import FPDF
-import easyocr
+from PIL import Image, ImageDraw, ImageFont
 
-# -----------------------------
-# Page config and theme
-# -----------------------------
-st.set_page_config(
-    page_title="FinFET Data Extractor",
-    page_icon="🔬",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-# -----------------------------
-# CSS for dark theme and styled buttons
-# -----------------------------
-st.markdown("""
-<style>
-body {
-    background-color: #1e1e2f;
-    color: #e0e0e0;
-}
-.sidebar .sidebar-content {
-    background-color: #2a2a3d;
-}
-.stButton>button {
-    color: white;
-    background: linear-gradient(90deg, #4CAF50, #2e7d32);
-    border-radius: 12px;
-    height: 3em;
-    width: 10em;
-    font-size: 16px;
-}
-h1, h2, h3, h4, h5 {
-    color: #00bfff;
-}
-</style>
-""", unsafe_allow_html=True)
-
-# -----------------------------
-# Logo
-# -----------------------------
+# Attempt to import EasyOCR
 try:
-    logo = Image.open("logo.png")
-    st.image(logo, width=150)
-except:
-    st.warning("Logo not found")
+    import easyocr
+    OCR_AVAILABLE = True
+except ImportError:
+    OCR_AVAILABLE = False
 
-st.title("FinFET Data Extractor")
-st.markdown("Upload PDF/Image → OCR → Extract Parameters")
+# App configuration
+st.set_page_config(page_title="FinFET Data Extractor", layout="wide")
 
-# -----------------------------
-# Sidebar log
-# -----------------------------
-st.sidebar.header("Logs")
-log_container = st.sidebar.empty()
-log_messages = []
+# Dark theme colors
+BG_COLOR = "#1f1f1f"
+TEXT_COLOR = "#e0e0e0"
+ACCENT_COLOR = "#00bfff"
+SIDEBAR_COLOR = "#272727"
+
+# Sidebar logo
+logo_img = Image.new("RGBA", (200, 50), color=(0, 191, 255))
+draw = ImageDraw.Draw(logo_img)
+draw.text((10, 10), "FinFET Data Extractor", fill="white")
+st.sidebar.image(logo_img, use_column_width=True)
+
+# Sidebar navigation
+mode = st.sidebar.radio("Select Mode", ["Synthetic Demo", "Upload PDF/Image"])
+st.sidebar.markdown("---")
+st.sidebar.write("Logs:")
 
 def log(msg):
-    log_messages.append(msg)
-    log_container.text("\n".join(log_messages))
-    st.text("\n".join(log_messages))  # also center
+    st.sidebar.write(msg)
+    st.write(msg)
 
-# -----------------------------
-# Synthetic demo data
-# -----------------------------
-def get_synthetic_data():
-    # 5nm node synthetic FinFET data
-    Vg = np.linspace(0, 1.0, 10)
-    data = {
-        "Lg": [5]*10,
-        "Hfin": [35]*10,
-        "EOT": [0.8]*10,
-        "ID (A/cm2)": np.random.rand(10)*1e3,
-        "Vth": np.random.rand(10)*0.3+0.3,
-        "Ion/Ioff": np.random.rand(10)*1e3,
-        "gm": np.random.rand(10)*5,
-        "Rsd": np.random.rand(10)*100,
-        "Capacitance (fF)": np.random.rand(10)*2,
-        "Delay (ps)": np.random.rand(10)*50,
-        "Vg": [Vg]*10  # for plotting
-    }
-    df = pd.DataFrame(data)
-    return df
-
-# -----------------------------
-# Export PDF
-# -----------------------------
+# Utility: PDF export
 def export_pdf(df):
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Arial", "B", 16)
-    pdf.cell(0, 10, "Synthetic FinFET Data Extractor", ln=True, align="C")
-    try:
-        pdf.image("logo.png", x=80, y=15, w=50)
-    except:
-        pass
-    pdf.ln(40)
-    pdf.set_font("Arial", "", 12)
-    for col in df.columns:
-        pdf.cell(40, 10, col, 1)
-    pdf.ln()
-    for idx, row in df.iterrows():
-        for val in row:
-            pdf.cell(40, 10, str(round(val, 3)) if isinstance(val, (int,float,np.float64)) else str(val), 1)
-        pdf.ln()
-    return pdf.output(dest="S").encode("latin1")
+    # Embed logo
+    pdf.image(BytesIO(logo_img.tobytes()), x=10, y=8, w=60)
+    pdf.set_font("Arial", size=10)
+    pdf.ln(20)
+    for i, row in df.iterrows():
+        pdf.cell(0, 8, ", ".join(f"{col}: {row[col]}" for col in df.columns), ln=True)
+    # Unicode-safe output
+    return pdf.output(dest="S").encode("utf-8")
 
-# -----------------------------
-# Show synthetic demo
-# -----------------------------
+# Generate synthetic demo data
+def generate_synthetic_data(n_devices=5):
+    data = []
+    for i in range(n_devices):
+        Vg = np.linspace(0, 1.0, 50)
+        ID = np.random.rand(50) * 1e-4
+        Lg = np.random.choice([3, 5]) * 1e-9
+        Hfin = np.random.rand() * 10e-9
+        EOT = np.random.rand() * 2e-9
+        Vth = np.random.rand() * 0.5
+        IonIoff = np.random.rand() * 1e5
+        gm = np.random.rand() * 1e-3
+        Rsd = np.random.rand() * 10
+        Cgs = np.random.rand() * 1e-15
+        Cgd = np.random.rand() * 1e-15
+        Delay = np.random.rand() * 1e-12
+        data.append({
+            "Vg": Vg, "ID (A/cm2)": ID, "Lg": Lg, "Hfin": Hfin, "EOT": EOT, 
+            "Vth": Vth, "Ion/Ioff": IonIoff, "gm": gm, "Rsd": Rsd,
+            "Cgs": Cgs, "Cgd": Cgd, "Delay": Delay
+        })
+    return data
+
 def show_synthetic_demo():
-    df = get_synthetic_data()
-    st.subheader("Synthetic Demo Data")
-    st.dataframe(df, use_container_width=True)
+    st.header("Synthetic FinFET Demo")
+    data = generate_synthetic_data()
+    
+    # Display in scrollable table
+    table_data = pd.DataFrame({
+        "Device": [f"Device {i+1}" for i in range(len(data))],
+        "Lg (nm)": [d["Lg"]*1e9 for d in data],
+        "Hfin (nm)": [d["Hfin"]*1e9 for d in data],
+        "EOT (nm)": [d["EOT"]*1e9 for d in data],
+        "Vth (V)": [d["Vth"] for d in data],
+        "Ion/Ioff": [d["Ion/Ioff"] for d in data],
+        "gm (S)": [d["gm"] for d in data],
+        "Rsd (Ohm)": [d["Rsd"] for d in data],
+        "Cgs (F)": [d["Cgs"] for d in data],
+        "Cgd (F)": [d["Cgd"] for d in data],
+        "Delay (s)": [d["Delay"] for d in data]
+    })
+    st.dataframe(table_data, use_container_width=True)
 
-    # Scaling plots
-    st.subheader("Scaling Plots")
-    fig, ax = plt.subplots(figsize=(8,4))
-    for i in range(len(df)):
-        ax.plot(df["Vg"][i], df["ID (A/cm2)"][i], marker='o', label=f"Device {i+1}")
-    ax.set_xlabel("Vg (V)")
-    ax.set_ylabel("ID (A/cm2)")
-    ax.set_title("ID vs Vg")
+    # Plot scaling curves
+    fig, ax = plt.subplots()
+    for i, d in enumerate(data):
+        ax.plot(d["Vg"], d["ID (A/cm2)"], marker='o', label=f"Device {i+1}")
+    ax.set_xlabel("Vg (V)", color=TEXT_COLOR)
+    ax.set_ylabel("ID (A/cm2)", color=TEXT_COLOR)
+    ax.set_title("Scaling Curves", color=TEXT_COLOR)
     ax.legend()
+    ax.set_facecolor(BG_COLOR)
+    fig.patch.set_facecolor(BG_COLOR)
     st.pyplot(fig)
 
     # Download buttons
-    st.subheader("Download Options")
-    st.download_button("⬇️ Download CSV", df.to_csv(index=False).encode("utf-8"), "synthetic_finfet.csv")
-    st.download_button("⬇️ Download PDF", export_pdf(df), "synthetic_finfet.pdf")
+    df_download = pd.DataFrame({
+        "Device": [f"Device {i+1}" for i in range(len(data))],
+        "Lg (nm)": [d["Lg"]*1e9 for d in data],
+        "Hfin (nm)": [d["Hfin"]*1e9 for d in data],
+        "EOT (nm)": [d["EOT"]*1e9 for d in data],
+        "Vth (V)": [d["Vth"] for d in data],
+        "Ion/Ioff": [d["Ion/Ioff"] for d in data],
+        "gm (S)": [d["gm"] for d in data],
+        "Rsd (Ohm)": [d["Rsd"] for d in data],
+        "Cgs (F)": [d["Cgs"] for d in data],
+        "Cgd (F)": [d["Cgd"] for d in data],
+        "Delay (s)": [d["Delay"] for d in data]
+    })
+    st.download_button("⬇️ Download CSV", df_download.to_csv(index=False).encode('utf-8'), "synthetic_finfet.csv")
+    st.download_button("⬇️ Download PDF", export_pdf(df_download), "synthetic_finfet.pdf")
 
-# -----------------------------
-# Main App Logic
-# -----------------------------
-uploaded_file = st.file_uploader("Upload a PDF or Image", type=["pdf","png","jpg","jpeg"])
+def show_upload_demo():
+    st.header("Upload PDF/Image")
+    uploaded_file = st.file_uploader("Choose a PDF or Image", type=["pdf", "png", "jpg", "jpeg"])
+    if uploaded_file:
+        st.write("File uploaded:", uploaded_file.name)
+        if OCR_AVAILABLE:
+            reader = easyocr.Reader(['en'])
+            text_result = " ".join(reader.readtext(uploaded_file.getvalue(), detail=0))
+        else:
+            text_result = "OCR not available. Simulated extraction: ID=1e-4 A/cm2, Vth=0.3 V"
+        st.text_area("Extracted Text / Parameters", text_result, height=300)
 
-if uploaded_file:
-    log(f"File uploaded: {uploaded_file.name}")
-    st.info("File upload detected. OCR not implemented in this demo.")
+# Main
+st.markdown(f"<div style='background:linear-gradient(90deg,{ACCENT_COLOR},{BG_COLOR});padding:10px'><h1 style='color:{TEXT_COLOR}'>FinFET Data Extractor</h1></div>", unsafe_allow_html=True)
+
+if mode == "Synthetic Demo":
+    show_synthetic_demo()
 else:
-    if st.button("Use Synthetic Demo"):
-        log("Using synthetic demo")
-        show_synthetic_demo()
+    show_upload_demo()
