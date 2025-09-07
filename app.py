@@ -11,6 +11,90 @@ from PIL import Image
 import numpy as np
 import qrcode
 
+
+import matplotlib.pyplot as plt
+
+
+def synthetic_parameters():
+    # IRDS-aligned synthetic FinFET dataset for 3–5 nm nodes
+    data = [
+        {
+            "Node": "5 nm",
+            "Lg (nm)": 12,
+            "Hfin (nm)": 45,
+            "EOT (nm)": 0.55,
+            "ID (A/cm²)": 2.0e4,
+            "Vth (V)": 0.30,
+            "Ion/Ioff": 3.0e6,
+            "gm (µS/µm)": 2800,
+            "Rsd (Ω·µm)": 70,
+            "Cgg (fF/µm)": 1.2,
+            "Delay (ps)": 1.0,
+        },
+        {
+            "Node": "4 nm",
+            "Lg (nm)": 9,
+            "Hfin (nm)": 50,
+            "EOT (nm)": 0.50,
+            "ID (A/cm²)": 2.3e4,
+            "Vth (V)": 0.28,
+            "Ion/Ioff": 4.0e6,
+            "gm (µS/µm)": 3100,
+            "Rsd (Ω·µm)": 60,
+            "Cgg (fF/µm)": 1.4,
+            "Delay (ps)": 0.8,
+        },
+        {
+            "Node": "3 nm",
+            "Lg (nm)": 7,
+            "Hfin (nm)": 55,
+            "EOT (nm)": 0.48,
+            "ID (A/cm²)": 2.6e4,
+            "Vth (V)": 0.25,
+            "Ion/Ioff": 5.0e6,
+            "gm (µS/µm)": 3400,
+            "Rsd (Ω·µm)": 50,
+            "Cgg (fF/µm)": 1.6,
+            "Delay (ps)": 0.6,
+        },
+    ]
+    return pd.DataFrame(data)
+
+
+def show_synthetic_demo():
+    st.subheader("📊 Synthetic Demo (3–5 nm IRDS-aligned FinFET Parameters)")
+    
+    df = synthetic_parameters()
+    st.dataframe(df, use_container_width=True)
+
+    # Plot scaling trends
+    st.markdown("### Scaling Trends")
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+
+    # gm vs Lg
+    axes[0].plot(df["Lg (nm)"], df["gm (µS/µm)"], marker="o", color="cyan", linewidth=2)
+    axes[0].invert_xaxis()  # smaller Lg → right side
+    axes[0].set_xlabel("Lg (nm)")
+    axes[0].set_ylabel("gm (µS/µm)")
+    axes[0].set_title("Lg vs gm")
+
+    # Ion/Ioff vs Vth
+    axes[1].plot(df["Vth (V)"], df["Ion/Ioff"], marker="s", color="magenta", linewidth=2)
+    axes[1].set_xlabel("Vth (V)")
+    axes[1].set_ylabel("Ion/Ioff")
+    axes[1].set_title("Vth vs Ion/Ioff")
+
+    st.pyplot(fig)
+
+    # Allow download
+    st.download_button(
+        "💾 Download Synthetic Data (CSV)",
+        data=df.to_csv(index=False),
+        file_name="synthetic_finfet_3to5nm.csv",
+        mime="text/csv"
+    )
+
+
 # --- CONFIG ---
 st.set_page_config(page_title="FinFET Data Extractor", layout="wide")
 BACKGROUND_COLOR = "#1E1E2F"   # slightly lighter dark
