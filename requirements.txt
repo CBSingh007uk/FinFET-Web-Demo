@@ -4,7 +4,7 @@ numpy
 matplotlib
 seaborn
 Pillow
-easyocr
-opencv-python-headless
 fpdf
 pdf2image
+easyocr
+opencv-python-headless
