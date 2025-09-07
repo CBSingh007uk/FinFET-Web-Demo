@@ -14,3 +14,6 @@ qrcode
 matplotlib
 fpdf
 xlsxwriter
+pdf2image
+pytesseract
+opencv-python
