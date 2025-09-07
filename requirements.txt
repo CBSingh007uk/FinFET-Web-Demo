@@ -17,3 +17,5 @@ xlsxwriter
 pdf2image
 pytesseract
 opencv-python
+seaborn
+opencv-python-headless
