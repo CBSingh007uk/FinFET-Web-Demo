@@ -3,13 +3,14 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from PIL import Image
+from PIL import Image, ImageDraw
 import io
-import easyocr
 from fpdf import FPDF
-from pdf2image import convert_from_bytes
+import easyocr
 
-# ----------------- PAGE CONFIG -----------------
+# -----------------------------
+# Page config and theme
+# -----------------------------
 st.set_page_config(
     page_title="FinFET Data Extractor",
     page_icon="🔬",
@@ -17,7 +18,9 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ----------------- CSS -----------------
+# -----------------------------
+# CSS for dark theme and styled buttons
+# -----------------------------
 st.markdown("""
 <style>
 body {
@@ -25,130 +28,124 @@ body {
     color: #e0e0e0;
 }
 .sidebar .sidebar-content {
-    background-color: #2e2e44;
-    color: #e0e0e0;
+    background-color: #2a2a3d;
 }
 .stButton>button {
     color: white;
-    background: linear-gradient(to right, #4CAF50, #2E8B57);
+    background: linear-gradient(90deg, #4CAF50, #2e7d32);
     border-radius: 12px;
     height: 3em;
-    width: 12em;
-    font-size: 18px;
+    width: 10em;
+    font-size: 16px;
+}
+h1, h2, h3, h4, h5 {
+    color: #00bfff;
 }
 </style>
 """, unsafe_allow_html=True)
 
-# ----------------- LOG FUNCTION -----------------
-def log(message, center=True):
-    if center:
-        st.text(message)
-    st.sidebar.text(message)
-
-# ----------------- LOGO -----------------
+# -----------------------------
+# Logo
+# -----------------------------
 try:
     logo = Image.open("logo.png")
     st.image(logo, width=150)
-except Exception:
-    log("Logo not found, using default title.")
+except:
+    st.warning("Logo not found")
 
-st.title("🔬 FinFET Data Extractor")
-st.sidebar.title("🔬 Logs")
+st.title("FinFET Data Extractor")
+st.markdown("Upload PDF/Image → OCR → Extract Parameters")
 
-# ----------------- FILE UPLOADER -----------------
-uploaded_file = st.file_uploader(
-    "Upload a PDF or Image (PNG/JPG/JPEG)",
-    type=["pdf", "png", "jpg", "jpeg"]
-)
+# -----------------------------
+# Sidebar log
+# -----------------------------
+st.sidebar.header("Logs")
+log_container = st.sidebar.empty()
+log_messages = []
 
-use_synthetic = st.button("Use Synthetic Demo")
+def log(msg):
+    log_messages.append(msg)
+    log_container.text("\n".join(log_messages))
+    st.text("\n".join(log_messages))  # also center
 
-# ----------------- SYNTHETIC DATA -----------------
-def synthetic_data():
-    np.random.seed(0)
-    n_samples = 5
-    df = pd.DataFrame({
-        "Lg (nm)": np.random.uniform(3,5,n_samples),
-        "Hfin (nm)": np.random.uniform(20,35,n_samples),
-        "EOT (nm)": np.random.uniform(0.7,1.2,n_samples),
-        "Vth (V)": np.random.uniform(0.2,0.5,n_samples),
-        "ID (A/cm2)": np.random.uniform(1e-5,1e-3,n_samples),
-        "Ion/Ioff": np.random.uniform(1e3,1e5,n_samples),
-        "gm (S)": np.random.uniform(1e-3,0.1,n_samples),
-        "Rsd (Ohm)": np.random.uniform(10,100,n_samples),
-        "Capacitance (fF)": np.random.uniform(0.1,5,n_samples),
-        "Delay (ps)": np.random.uniform(1,20,n_samples),
-        "Vg (V)": [np.linspace(0, 1, 50) for _ in range(n_samples)]
-    })
+# -----------------------------
+# Synthetic demo data
+# -----------------------------
+def get_synthetic_data():
+    # 5nm node synthetic FinFET data
+    Vg = np.linspace(0, 1.0, 10)
+    data = {
+        "Lg": [5]*10,
+        "Hfin": [35]*10,
+        "EOT": [0.8]*10,
+        "ID (A/cm2)": np.random.rand(10)*1e3,
+        "Vth": np.random.rand(10)*0.3+0.3,
+        "Ion/Ioff": np.random.rand(10)*1e3,
+        "gm": np.random.rand(10)*5,
+        "Rsd": np.random.rand(10)*100,
+        "Capacitance (fF)": np.random.rand(10)*2,
+        "Delay (ps)": np.random.rand(10)*50,
+        "Vg": [Vg]*10  # for plotting
+    }
+    df = pd.DataFrame(data)
     return df
 
-# ----------------- PDF EXPORT -----------------
+# -----------------------------
+# Export PDF
+# -----------------------------
 def export_pdf(df):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", "B", 16)
-    pdf.cell(0, 10, "Synthetic FinFET Parameters", ln=True, align="C")
+    pdf.cell(0, 10, "Synthetic FinFET Data Extractor", ln=True, align="C")
     try:
-        pdf.image("logo.png", x=10, y=10, w=30)
+        pdf.image("logo.png", x=80, y=15, w=50)
     except:
         pass
-    pdf.ln(20)
+    pdf.ln(40)
     pdf.set_font("Arial", "", 12)
-    for i in range(len(df)):
-        for col in df.columns[:-1]:  # skip Vg
-            pdf.cell(0, 8, f"{col}: {df[col][i]}", ln=True)
-        pdf.ln(5)
+    for col in df.columns:
+        pdf.cell(40, 10, col, 1)
+    pdf.ln()
+    for idx, row in df.iterrows():
+        for val in row:
+            pdf.cell(40, 10, str(round(val, 3)) if isinstance(val, (int,float,np.float64)) else str(val), 1)
+        pdf.ln()
     return pdf.output(dest="S").encode("latin1")
 
-# ----------------- OCR FUNCTION -----------------
-def run_ocr(img):
-    try:
-        reader = easyocr.Reader(['en'], gpu=False)
-        result = reader.readtext(np.array(img))
-        text = "\n".join([r[1] for r in result])
-        return text
-    except Exception as e:
-        log(f"OCR error: {e}")
-        return ""
+# -----------------------------
+# Show synthetic demo
+# -----------------------------
+def show_synthetic_demo():
+    df = get_synthetic_data()
+    st.subheader("Synthetic Demo Data")
+    st.dataframe(df, use_container_width=True)
 
-# ----------------- MAIN -----------------
-if uploaded_file or use_synthetic:
-    if use_synthetic:
-        df = synthetic_data()
-        st.subheader("Synthetic FinFET Demo Data")
-        st.dataframe(df.drop(columns=["Vg"]))
-        # Scaling plot
-        st.subheader("Scaling Plots (ID vs Vg)")
-        fig, ax = plt.subplots()
-        for i in range(len(df)):
-            ax.plot(df["Vg"][i], np.linspace(0, df["ID (A/cm2)"][i], len(df["Vg"][i])), label=f"Sample {i+1}")
-        ax.set_xlabel("Vg (V)")
-        ax.set_ylabel("ID (A/cm²)")
-        ax.legend()
-        st.pyplot(fig)
+    # Scaling plots
+    st.subheader("Scaling Plots")
+    fig, ax = plt.subplots(figsize=(8,4))
+    for i in range(len(df)):
+        ax.plot(df["Vg"][i], df["ID (A/cm2)"][i], marker='o', label=f"Device {i+1}")
+    ax.set_xlabel("Vg (V)")
+    ax.set_ylabel("ID (A/cm2)")
+    ax.set_title("ID vs Vg")
+    ax.legend()
+    st.pyplot(fig)
 
-        # Download buttons
-        st.download_button("⬇️ Download CSV", df.drop(columns=["Vg"]).to_csv(index=False), "synthetic_finfet.csv")
-        st.download_button("⬇️ Download PDF", export_pdf(df), "synthetic_finfet.pdf")
-        log("Synthetic demo generated.", center=False)
+    # Download buttons
+    st.subheader("Download Options")
+    st.download_button("⬇️ Download CSV", df.to_csv(index=False).encode("utf-8"), "synthetic_finfet.csv")
+    st.download_button("⬇️ Download PDF", export_pdf(df), "synthetic_finfet.pdf")
 
-    else:
-        try:
-            if uploaded_file.type == "application/pdf":
-                images = convert_from_bytes(uploaded_file.read())
-                img = images[0]
-            else:
-                img = Image.open(uploaded_file)
+# -----------------------------
+# Main App Logic
+# -----------------------------
+uploaded_file = st.file_uploader("Upload a PDF or Image", type=["pdf","png","jpg","jpeg"])
 
-            st.image(img, caption="Input Image", use_container_width=True)
-            text = run_ocr(img)
-            st.subheader("Extracted Text")
-            st.text(text)
-            log("OCR completed.", center=False)
-
-            # TODO: Add regex-based parameter extraction here
-
-        except Exception as e:
-            log(f"Error processing file: {e}")
+if uploaded_file:
+    log(f"File uploaded: {uploaded_file.name}")
+    st.info("File upload detected. OCR not implemented in this demo.")
 else:
-    st.info("Upload a file or use the Synthetic Demo button.")
+    if st.button("Use Synthetic Demo"):
+        log("Using synthetic demo")
+        show_synthetic_demo()
