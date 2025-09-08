@@ -1,15 +1,3 @@
 streamlit==1.28.0
-pandas
+matplotlib>=3.7.0
 numpy
-matplotlib
-seaborn
-Pillow
-fpdf
-pdf2image
-easyocr
-opencv-python-headless
-pytesseract
-PyMuPDF==1.23.6
-pdfplumber
-openpyxl
-camelot-py[cv]
