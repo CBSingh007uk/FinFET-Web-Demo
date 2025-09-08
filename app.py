@@ -1,190 +1,164 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 from io import BytesIO
-import requests
-import fitz  # PyMuPDF
 from fpdf import FPDF
+import matplotlib.pyplot as plt
 from PIL import Image
 
 # ------------------------
-# App Config
+# PAGE CONFIG
 # ------------------------
-st.set_page_config(page_title="FinFET Data Extractor", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="FinFET Data Extractor",
+                   layout="wide",
+                   page_icon="📊")
 
-# Dark theme colors
-BACKGROUND_COLOR = "#1e1e1e"
-TEXT_COLOR = "#d4d4d4"
-BUTTON_COLOR = "#3a3a3a"
-BUTTON_TEXT_COLOR = "#ffffff"
-
+# ------------------------
+# STYLING
+# ------------------------
 st.markdown(
-    f"""
+    """
     <style>
-    body {{
-        background-color: {BACKGROUND_COLOR};
-        color: {TEXT_COLOR};
-    }}
-    .stButton>button {{
-        background-color: {BUTTON_COLOR};
-        color: {BUTTON_TEXT_COLOR};
-    }}
-    .sidebar .sidebar-content {{
-        background-color: {BACKGROUND_COLOR};
-        color: {TEXT_COLOR};
-    }}
+    .main {background-color: #1e1e1e; color: #e0f7fa;}
+    .stSidebar {background-color: #111111; color: #e0f7fa;}
+    .sidebar .sidebar-content {color: #e0f7fa;}
+    .css-1aumxhk {color: #e0f7fa;}  /* for buttons and texts */
     </style>
-    """,
-    unsafe_allow_html=True,
+    """, unsafe_allow_html=True
 )
 
 # ------------------------
-# Logo
+# LOGO
 # ------------------------
-try:
-    logo_img = Image.open("logo.png")  # put your logo.png in same folder
-    st.sidebar.image(logo_img, use_column_width=True)
-except:
-    st.sidebar.write("Logo not found")
+logo_img = Image.open("logo.png")  # place logo.png in the repo
+st.sidebar.image(logo_img, use_column_width=True)
 
 # ------------------------
-# GitHub PDF links
+# PDF REPOSITORY OPTIONS
 # ------------------------
-github_pdfs = {
-    "1905.11207v3.pdf": "https://raw.githubusercontent.com/CBSingh007uk/FinFET-Web-Demo/pdfs/1905.11207v3.pdf",
-    "2007.13168v4.pdf": "https://raw.githubusercontent.com/CBSingh007uk/FinFET-Web-Demo/pdfs/2007.13168v4.pdf",
-    "2007.14448v1.pdf": "https://raw.githubusercontent.com/CBSingh007uk/FinFET-Web-Demo/pdfs/2007.14448v1.pdf",
-    "2407.18187v1.pdf": "https://raw.githubusercontent.com/CBSingh007uk/FinFET-Web-Demo/pdfs/2407.18187v1.pdf",
-    "2501.15190v1.pdf": "https://raw.githubusercontent.com/CBSingh007uk/FinFET-Web-Demo/pdfs/2501.15190v1.pdf"
+pdf_options = { 
+    "Arxiv 1905.11207 v3": "pdfs/1905.11207v3.pdf",
+    "Arxiv 2007.13168 v4": "pdfs/2007.13168v4.pdf",
+    "Arxiv 2007.14448 v1": "pdfs/2007.14448v1.pdf",
+    "Arxiv 2407.18187 v1": "pdfs/2407.18187v1.pdf",
+    "Arxiv 2501.15190 v1": "pdfs/2501.15190v1.pdf"
 }
 
 # ------------------------
-# Functions
+# FUNCTION TO SIMULATE PARAMETER EXTRACTION
 # ------------------------
-def extract_text_from_pdf(pdf_stream):
-    try:
-        pdf_stream.seek(0)
-        doc = fitz.open(stream=pdf_stream.read(), filetype="pdf")
-        text = ""
-        for page in doc:
-            text += page.get_text()
-        return text
-    except Exception as e:
-        st.error(f"Error extracting PDF: {e}")
-        return ""
-
 def parse_parameters(text):
-    """
-    For now, return synthetic demo data.
-    """
-    param_dict = {
-        "Lg (nm)": [3],
-        "Hfin (nm)": [6],
-        "EOT (nm)": [0.8],
-        "Vth (V)": [0.3],
-        "ID_max (A/cm2)": [0.8],
-        "Ion/Ioff": [5e4],
-        "gm (mS/μm)": [1.2],
-        "Rs_d (Ω·μm)": [50],
-        "Capacitance (fF/μm)": [0.5],
-        "Delay (ps)": [10],
-        "Vg": [np.linspace(0, 1.2, 10)],
-        "ID vs Vg (A/cm2)": [np.linspace(0, 0.8, 10)]
-    }
-    return pd.DataFrame(param_dict)
+    # Here you can implement actual extraction; for demo, we simulate
+    df = pd.DataFrame({
+        "Lg (nm)": [3, 4, 5],
+        "Hfin (nm)": [6, 6.5, 7],
+        "EOT (nm)": [0.8, 0.85, 0.9],
+        "Vth (V)": [0.3, 0.35, 0.4],
+        "ID_max (A/cm2)": [0.8, 1.0, 1.2],
+        "Ion/Ioff": [5e4, 4e4, 3e4],
+        "Vg (V)": [list(np.linspace(0, 1.0, 10))]*3,
+        "ID vs Vg (A/cm2)": [list(np.linspace(0, 0.8, 10)),
+                             list(np.linspace(0, 1.0, 10)),
+                             list(np.linspace(0, 1.2, 10))]
+    })
+    return df
 
+# ------------------------
+# FUNCTION TO EXPORT PDF WITH LOGO
+# ------------------------
 def export_pdf(df):
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Arial", "B", 16)
-    pdf.cell(0, 10, "FinFET Parameters", ln=True, align="C")
+    # Logo
+    pdf.image("logo.png", x=10, y=8, w=30)
+    pdf.set_font("Arial", "B", 14)
+    pdf.ln(20)
+    pdf.cell(0, 10, "Extracted FinFET Parameters", ln=True)
     pdf.ln(5)
-    # add table
+    # Table
     pdf.set_font("Arial", "", 12)
-    for i in df.index:
-        row_text = " | ".join([f"{col}: {df[col][i]}" for col in df.columns if col not in ["Vg","ID vs Vg (A/cm2)"]])
-        pdf.multi_cell(0, 8, row_text)
-    # embed logo
-    try:
-        pdf.image("logo.png", x=160, y=10, w=30)
-    except:
-        pass
-    pdf_bytes = BytesIO()
-    pdf.output(pdf_bytes)
-    pdf_bytes.seek(0)
-    return pdf_bytes
+    col_width = pdf.w / (len(df.columns) + 1)
+    row_height = 8
+    for col in df.columns:
+        pdf.cell(col_width, row_height, str(col), border=1)
+    pdf.ln(row_height)
+    for i in range(len(df)):
+        for col in df.columns:
+            val = df.iloc[i][col]
+            if isinstance(val, list):
+                val = ", ".join([f"{v:.2f}" if isinstance(v,float) else str(v) for v in val])
+            pdf.cell(col_width, row_height, str(val), border=1)
+        pdf.ln(row_height)
+    output = BytesIO()
+    pdf.output(output)
+    output.seek(0)
+    return output
 
 # ------------------------
-# Sidebar Options
+# MAIN APP
 # ------------------------
-mode = st.sidebar.selectbox("Select Mode", ["Synthetic Demo", "Upload PDF", "Choose PDF from Repository"])
+st.title("📊 FinFET Data Extractor")
+st.markdown("Upload a PDF/Image or select one from our repository to extract FinFET parameters.")
 
-st.sidebar.markdown("---")
-log_sidebar = st.sidebar.empty()
+mode = st.sidebar.radio("Choose Mode", ["Synthetic Demo", "Select PDF", "Upload PDF"])
 
-# ------------------------
-# Synthetic Demo
-# ------------------------
 if mode == "Synthetic Demo":
     st.header("Synthetic FinFET Demo Data")
-    df = parse_parameters("synthetic")
-    # Safe drop
-    columns_to_drop = [c for c in ["Vg", "ID vs Vg (A/cm2)"] if c in df.columns]
-    st.dataframe(df.drop(columns=columns_to_drop), use_container_width=True)
+    synthetic_text = "Simulated FinFET parameters for testing."
+    st.text_area("PDF Content", synthetic_text, height=150)
+    df = parse_parameters(synthetic_text)
+    st.dataframe(df.drop(columns=["Vg", "ID vs Vg (A/cm2)"]), use_container_width=True)
 
-    # Scaling plot
-    if "Vg" in df.columns and "ID vs Vg (A/cm2)" in df.columns:
-        fig, ax = plt.subplots()
-        for i in df.index:
-            ax.plot(df["Vg"][i], df["ID vs Vg (A/cm2)"][i], marker='o', label=f"Device {i+1}")
-        ax.set_xlabel("Vg (V)")
-        ax.set_ylabel("ID (A/cm2)")
-        ax.set_title("ID vs Vg Scaling Plot")
-        ax.legend()
-        st.pyplot(fig)
+    # ID vs Vg plots
+    st.subheader("ID vs Vg Scaling Plot")
+    fig, ax = plt.subplots()
+    for i in range(len(df)):
+        ax.plot(df["Vg (V)"][i], df["ID vs Vg (A/cm2)"][i], marker='o', label=f"Device {i+1}")
+    ax.set_xlabel("Vg (V)")
+    ax.set_ylabel("ID (A/cm2)")
+    ax.legend()
+    st.pyplot(fig)
 
     # Download buttons
-    csv_bytes = df.to_csv(index=False).encode()
+    st.download_button("⬇️ Download CSV", df.to_csv(index=False).encode(), "synthetic_finfet.csv")
     excel_bytes = BytesIO()
     df.to_excel(excel_bytes, index=False)
     excel_bytes.seek(0)
-    st.download_button("⬇️ Download CSV", csv_bytes, "finfet_demo.csv")
-    st.download_button("⬇️ Download Excel", excel_bytes, "finfet_demo.xlsx")
-    st.download_button("⬇️ Download PDF", export_pdf(df), "finfet_demo.pdf")
+    st.download_button("⬇️ Download Excel", excel_bytes, "synthetic_finfet.xlsx")
+    st.download_button("⬇️ Download PDF", export_pdf(df), "synthetic_finfet.pdf")
 
-# ------------------------
-# Upload PDF
-# ------------------------
-elif mode == "Upload PDF":
-    st.header("Upload PDF/Image")
-    uploaded_file = st.file_uploader("Choose a PDF file", type=["pdf"])
-    if uploaded_file:
-        pdf_bytes = BytesIO(uploaded_file.read())
-        text = extract_text_from_pdf(pdf_bytes)
-        st.subheader("Extracted Text")
-        st.text_area("PDF Content", text, height=300)
+elif mode == "Select PDF":
+    st.header("Select PDF from Repository")
+    selected_pdf = st.selectbox("Choose PDF", list(pdf_options.keys()))
+    pdf_path = pdf_options[selected_pdf]
+    try:
+        with open(pdf_path, "rb") as f:
+            pdf_bytes = BytesIO(f.read())
+        text = f"Simulated extraction from {selected_pdf}"
+        st.text_area("PDF Content", text, height=200)
         df = parse_parameters(text)
-        columns_to_drop = [c for c in ["Vg", "ID vs Vg (A/cm2)"] if c in df.columns]
-        st.dataframe(df.drop(columns=columns_to_drop), use_container_width=True)
-        log_sidebar.text_area("Log", f"Extracted {len(df)} rows", height=100)
+        st.dataframe(df.drop(columns=["Vg", "ID vs Vg (A/cm2)"]), use_container_width=True)
+        # Download
+        st.download_button("⬇️ Download CSV", df.to_csv(index=False).encode(), f"{selected_pdf}.csv")
+        excel_bytes = BytesIO()
+        df.to_excel(excel_bytes, index=False)
+        excel_bytes.seek(0)
+        st.download_button("⬇️ Download Excel", excel_bytes, f"{selected_pdf}.xlsx")
+        st.download_button("⬇️ Download PDF", export_pdf(df), f"{selected_pdf}.pdf")
+    except FileNotFoundError:
+        st.error(f"File {pdf_path} not found.")
 
-# ------------------------
-# Choose PDF from GitHub Repository
-# ------------------------
-elif mode == "Choose PDF from Repository":
-    st.header("Choose PDF from Repository")
-    selected_pdf = st.selectbox("Select PDF", list(github_pdfs.keys()))
-    if selected_pdf:
-        r = requests.get(github_pdfs[selected_pdf])
-        if r.status_code == 200:
-            pdf_bytes = BytesIO(r.content)
-            text = extract_text_from_pdf(pdf_bytes)
-            st.subheader("Extracted Text")
-            st.text_area("PDF Content", text, height=300)
-            df = parse_parameters(text)
-            columns_to_drop = [c for c in ["Vg", "ID vs Vg (A/cm2)"] if c in df.columns]
-            st.dataframe(df.drop(columns=columns_to_drop), use_container_width=True)
-            log_sidebar.text_area("Log", f"Extracted {len(df)} rows from {selected_pdf}", height=100)
-        else:
-            st.error("Failed to download PDF from GitHub.")
+elif mode == "Upload PDF":
+    st.header("Upload your own PDF")
+    uploaded_file = st.file_uploader("Upload PDF", type=["pdf"])
+    if uploaded_file:
+        text = "Simulated extraction from uploaded PDF."
+        st.text_area("Extracted Text from PDF", text, height=200)
+        df = parse_parameters(text)
+        st.dataframe(df.drop(columns=["Vg", "ID vs Vg (A/cm2)"]), use_container_width=True)
+        st.download_button("⬇️ Download CSV", df.to_csv(index=False).encode(), "uploaded_finfet.csv")
+        excel_bytes = BytesIO()
+        df.to_excel(excel_bytes, index=False)
+        excel_bytes.seek(0)
+        st.download_button("⬇️ Download Excel", excel_bytes, "uploaded_finfet.xlsx")
+        st.download_button("⬇️ Download PDF", export_pdf(df), "uploaded_finfet.pdf")
