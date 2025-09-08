@@ -1,137 +1,143 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-from fpdf import FPDF
+import requests
+import fitz  # PyMuPDF
 from io import BytesIO
-from PIL import Image
+from fpdf import FPDF
+import matplotlib.pyplot as plt
 
-# -------------------
-# Configuration
-# -------------------
-st.set_page_config(
-    page_title="FinFET Data Extractor",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
+st.set_page_config(page_title="FinFET Data Extractor", layout="wide")
 
-# Logo image
-logo_img = Image.new("RGB", (200, 60), color=(0, 120, 255))
+# -------------------- Styling --------------------
+st.markdown("""
+    <style>
+    .main {background-color: #1c1c1c; color: #d0d0d0;}
+    .sidebar .sidebar-content {background-color: #111111; color: #d0d0d0;}
+    .stButton>button {background-color:#4444aa;color:#ffffff;}
+    </style>
+""", unsafe_allow_html=True)
 
-# -------------------
-# Sidebar
-# -------------------
-st.sidebar.image(logo_img, use_column_width=True)
-mode = st.sidebar.radio("Choose Mode:", ["Synthetic Demo", "Upload PDF"])
+# -------------------- Sidebar --------------------
+st.sidebar.image("logo.png", use_column_width=True)
+mode = st.sidebar.radio("Mode", ["Select PDF from GitHub", "Upload PDF", "Synthetic Demo"])
 
-# Logs container
-log_container = st.sidebar.empty()
+# GitHub PDFs
+github_pdfs = {
+    "1905.11207v3.pdf": "https://raw.githubusercontent.com/yourusername/yourrepo/main/pdfs/1905.11207v3.pdf",
+    "2007.13168v4.pdf": "https://raw.githubusercontent.com/yourusername/yourrepo/main/pdfs/2007.13168v4.pdf",
+    "2007.14448v1.pdf": "https://raw.githubusercontent.com/yourusername/yourrepo/main/pdfs/2007.14448v1.pdf",
+    "2407.18187v1.pdf": "https://raw.githubusercontent.com/yourusername/yourrepo/main/pdfs/2407.18187v1.pdf",
+    "2501.15190v1.pdf": "https://raw.githubusercontent.com/yourusername/yourrepo/main/pdfs/2501.15190v1.pdf"
+}
 
-# -------------------
-# Helper functions
-# -------------------
-def generate_synthetic_df():
-    """Create synthetic FinFET data for demo purposes"""
-    n_devices = 5
-    df = pd.DataFrame({
-        "Device": [f"Device {i+1}" for i in range(n_devices)],
-        "Lg (nm)": [3, 3, 4, 3.5, 3],
-        "Hfin (nm)": [6, 6.5, 5.5, 6, 6],
-        "EOT (nm)": [0.8, 0.7, 0.8, 0.85, 0.8],
-        "Vth (V)": [0.3, 0.35, 0.32, 0.3, 0.33],
-        "ID (A/cm2)": [0.8, 0.85, 0.75, 0.78, 0.82],
-        "Ion/Ioff": [5e4, 4.5e4, 5.2e4, 4.9e4, 5e4],
-        "Vg": [np.linspace(0, 1, 10) for _ in range(n_devices)]
-    })
+# -------------------- Functions --------------------
+def extract_text_from_pdf(pdf_bytes):
+    try:
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        text = ""
+        for page in doc:
+            text += page.get_text()
+        return text
+    except Exception as e:
+        st.error(f"Error extracting PDF: {e}")
+        return ""
+
+def parse_parameters(text):
+    # Dummy parser: you can replace with real parsing logic
+    # Try to extract numbers after "Lg=", "Hfin=", etc.
+    param_dict = {
+        "Lg (nm)": [3],
+        "Hfin (nm)": [6],
+        "EOT (nm)": [0.8],
+        "Vth (V)": [0.3],
+        "ID_max (A/cm2)": [0.8],
+        "Ion/Ioff": [5e4],
+        "gm (mS/μm)": [1.2],
+        "Rs_d (Ω·μm)": [50],
+        "Capacitance (fF/μm)": [0.5],
+        "Delay (ps)": [10],
+        "Vg (V)": [np.linspace(0, 1.2, 10)],
+        "ID vs Vg (A/cm2)": [np.linspace(0, 0.8, 10)]
+    }
+    df = pd.DataFrame(param_dict)
     return df
 
-def export_pdf(df, logo_img=logo_img):
-    """Export DataFrame to PDF with logo"""
+def export_csv(df):
+    return df.to_csv(index=False).encode('utf-8')
+
+def export_excel(df):
+    output = BytesIO()
+    df.to_excel(output, index=False)
+    return output.getvalue()
+
+def export_pdf(df):
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Arial", "B", 14)
-    pdf.cell(0, 10, "FinFET Parameters", ln=True, align="C")
-
-    # Add logo at top-right
-    tmp_logo = BytesIO()
-    logo_img.save(tmp_logo, format="PNG")
-    tmp_logo.seek(0)
-    pdf.image(tmp_logo, x=150, y=8, w=50)
-
+    pdf.set_font("Arial", size=12)
+    # Add logo if exists
+    try:
+        pdf.image("logo.png", x=10, y=8, w=40)
+    except:
+        pass
     pdf.ln(20)
-
-    # Add table
-    pdf.set_font("Arial", "", 12)
-    col_width = pdf.w / (len(df.columns)+1)
-    row_height = 8
-
-    # Header
     for col in df.columns:
-        pdf.cell(col_width, row_height, str(col), border=1)
-    pdf.ln(row_height)
-
-    # Rows
-    for idx, row in df.iterrows():
-        for item in row:
-            if isinstance(item, np.ndarray):
-                item_str = ", ".join([f"{v:.2f}" for v in item])
-            else:
-                item_str = str(item)
-            pdf.cell(col_width, row_height, item_str, border=1)
-        pdf.ln(row_height)
-
+        pdf.cell(40, 10, col, border=1)
+    pdf.ln()
+    for i in range(len(df)):
+        for col in df.columns:
+            val = df.iloc[i][col]
+            if isinstance(val, (list, np.ndarray)):
+                val = str(val)
+            pdf.cell(40, 10, str(val), border=1)
+        pdf.ln()
     return pdf.output(dest="S").encode("latin1")
 
-# -------------------
-# Main functions
-# -------------------
-def show_synthetic_demo():
-    st.subheader("Synthetic FinFET Demo Data")
-    df = generate_synthetic_df()
+# -------------------- Main --------------------
+if mode == "Select PDF from GitHub":
+    selected_pdf = st.sidebar.selectbox("Select PDF", list(github_pdfs.keys()))
+    if selected_pdf:
+        r = requests.get(github_pdfs[selected_pdf])
+        text = extract_text_from_pdf(r.content)
+        st.subheader("Extracted Text from PDF")
+        st.text_area("PDF Content", text, height=300)
+        df = parse_parameters(text)
+        st.subheader("Extracted Parameters")
+        st.dataframe(df.drop(columns=["Vg", "ID vs Vg (A/cm2)"]), use_container_width=True)
 
-    # Show table without Vg column
-    st.dataframe(df.drop(columns=["Vg"], errors="ignore"))
-
-    # Scaling plots
-    st.subheader("ID vs Vg Scaling Plot")
-    fig, ax = plt.subplots()
-    for i in range(len(df)):
-        x = df["Vg"][i]
-        y = np.linspace(0, df["ID (A/cm2)"][i], len(x))
-        ax.plot(x, y, marker='o', label=df["Device"][i])
-    ax.set_xlabel("Vg (V)")
-    ax.set_ylabel("ID (A/cm2)")
-    ax.set_title("ID vs Vg")
-    ax.legend()
-    st.pyplot(fig)
-
-    # Export options
-    st.subheader("Download Table")
-    st.download_button("⬇️ Download CSV", df.to_csv(index=False), "synthetic_finfet.csv")
-    st.download_button("⬇️ Download Excel", df.to_excel(index=False), "synthetic_finfet.xlsx")
-    st.download_button("⬇️ Download PDF", export_pdf(df), "synthetic_finfet.pdf")
-
-def show_uploaded_pdf_mode():
-    st.subheader("Upload PDF/Image")
-    uploaded_file = st.file_uploader("Choose a PDF file", type=["pdf"])
+elif mode == "Upload PDF":
+    uploaded_file = st.file_uploader("Upload PDF", type="pdf")
     if uploaded_file:
-        # Simulate extraction for demo
-        df = pd.DataFrame({
-            "Parameter": ["Lg (nm)", "Hfin (nm)", "EOT (nm)", "Vth (V)", "ID (A/cm2)", "Ion/Ioff"],
-            "Value": [3, 6, 0.8, 0.3, 0.8, 5e4]
-        })
-        st.write("Extracted Parameters:")
-        st.dataframe(df)
+        text = extract_text_from_pdf(uploaded_file.read())
+        st.subheader("Extracted Text from PDF")
+        st.text_area("PDF Content", text, height=300)
+        df = parse_parameters(text)
+        st.subheader("Extracted Parameters")
+        st.dataframe(df.drop(columns=["Vg", "ID vs Vg (A/cm2)"]), use_container_width=True)
 
-        # Download
-        st.download_button("⬇️ Download CSV", df.to_csv(index=False), "finfet_extracted.csv")
-        st.download_button("⬇️ Download Excel", df.to_excel(index=False), "finfet_extracted.xlsx")
-        st.download_button("⬇️ Download PDF", export_pdf(df), "finfet_extracted.pdf")
+else:  # Synthetic Demo
+    st.subheader("Synthetic FinFET Demo Data")
+    df = parse_parameters("")
+    st.dataframe(df.drop(columns=["Vg", "ID vs Vg (A/cm2)"]), use_container_width=True)
 
-# -------------------
-# Run selected mode
-# -------------------
-if mode == "Synthetic Demo":
-    show_synthetic_demo()
-else:
-    show_uploaded_pdf_mode()
+# -------------------- Downloads --------------------
+st.subheader("Download Extracted Parameters")
+col1, col2, col3 = st.columns(3)
+with col1:
+    st.download_button("⬇️ CSV", export_csv(df), file_name="finfet_params.csv")
+with col2:
+    st.download_button("⬇️ Excel", export_excel(df), file_name="finfet_params.xlsx")
+with col3:
+    st.download_button("⬇️ PDF", export_pdf(df), file_name="finfet_params.pdf")
+
+# -------------------- Scaling Plot --------------------
+st.subheader("ID vs Vg Scaling Plot")
+fig, ax = plt.subplots()
+for i in range(len(df)):
+    x = df["Vg"][i]
+    y = df["ID vs Vg (A/cm2)"][i]
+    ax.plot(x, y, marker='o', label=f"Device {i+1}")
+ax.set_xlabel("Vg (V)")
+ax.set_ylabel("ID (A/cm2)")
+ax.legend()
+st.pyplot(fig)
