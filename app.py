@@ -1,4 +1,6 @@
 import streamlit as st
+import easyocr
+import fitz  # PyMuPDF
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -6,34 +8,40 @@ from io import BytesIO
 from fpdf import FPDF
 from PIL import Image
 
-# --- Page config ---
-st.set_page_config(
-    page_title="FinFET Data Extractor",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
 # --- Sidebar ---
-st.sidebar.markdown("<h1 style='color:white;'>FinFET Data Extractor</h1>", unsafe_allow_html=True)
-try:
-    logo_img = Image.open("logo.png")  # make sure this exists in app folder
-    st.sidebar.image(logo_img, use_column_width=True)
-except:
-    st.sidebar.write("Logo not found")
+st.sidebar.title("FinFET Data Extractor")
+st.sidebar.image("logo.png", use_column_width=True)
 
-option = st.sidebar.radio(
-    "Choose mode",
-    ("Synthetic Demo", "Upload PDF/Image")
-)
+option = st.sidebar.radio("Choose mode", ("Synthetic Demo", "Upload PDF/Image"))
 
-# --- Helper: Export PDF ---
+# --- Helper Functions ---
+def extract_text_from_pdf(pdf_file):
+    doc = fitz.open(pdf_file)
+    text = ""
+    for page in doc:
+        text += page.get_text()
+    return text
+
+def extract_parameters_from_text(text):
+    # Placeholder function to extract parameters from text
+    # Implement your parameter extraction logic here
+    return {
+        "Device": "Device 1",
+        "Lg (nm)": 5,
+        "Hfin (nm)": 10,
+        "EOT (nm)": 1.2,
+        "ID (A/cm2)": 1.2e-4,
+        "Vth (V)": 0.28,
+        "Ion/Ioff": 1e5,
+        "Vg": np.linspace(0, 1.2, 10).tolist()
+    }
+
 def export_pdf(df):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", "B", 16)
-    pdf.cell(0, 10, "Synthetic FinFET Data", ln=True, align="C")
+    pdf.cell(0, 10, "Extracted FinFET Data", ln=True, align="C")
     pdf.ln(10)
-    # Add table
     pdf.set_font("Arial", "", 12)
     col_width = pdf.w / (len(df.columns) + 1)
     for col in df.columns:
@@ -41,54 +49,38 @@ def export_pdf(df):
     pdf.ln()
     for index, row in df.iterrows():
         for item in row:
-            if isinstance(item, list):
-                pdf.cell(col_width, 10, str([round(x,2) for x in item]), border=1)
-            else:
-                pdf.cell(col_width, 10, str(item), border=1)
+            pdf.cell(col_width, 10, str(item), border=1)
         pdf.ln()
     return pdf.output(dest="S").encode("latin-1", "replace")
 
-# --- Synthetic Demo ---
-def show_synthetic_demo():
-    st.subheader("Synthetic Demo Parameters")
-    # Example FinFET 3-5nm node data
-    df = pd.DataFrame({
-        "Device": [f"Device {i+1}" for i in range(3)],
-        "Lg (nm)": [5, 3, 4],
-        "Hfin (nm)": [10, 8, 9],
-        "EOT (nm)": [1.2, 1.0, 1.1],
-        "ID (A/cm2)": [1.2e-4, 1.5e-4, 1.1e-4],
-        "Vth (V)": [0.28, 0.25, 0.27],
-        "Ion/Ioff": [10**5, 2*10**5, 1.5*10**5],
-        "Vg": [np.linspace(0, 1.2, 10).tolist() for _ in range(3)]
-    })
-
-    st.dataframe(df, use_container_width=True)
-
-    # Scaling Plot: ID vs Vg
-    st.subheader("ID vs Vg Scaling Plot")
-    fig, ax = plt.subplots()
-    for i in range(len(df)):
-        Vg_values = df.at[i, "Vg"]
-        ID_values = np.linspace(0, df.at[i, "ID (A/cm2)"], len(Vg_values))
-        ax.plot(Vg_values, ID_values, marker='o', label=df.at[i, "Device"])
-    ax.set_xlabel("Vg (V)")
-    ax.set_ylabel("ID (A/cm2)")
-    ax.legend()
-    st.pyplot(fig)
-
-    # Downloads
-    df_download = df.copy()
-    csv_data = df_download.to_csv(index=False).encode("utf-8")
-    st.download_button("⬇️ Download CSV", csv_data, "synthetic_finfet.csv")
-    st.download_button("⬇️ Download PDF", export_pdf(df_download), "synthetic_finfet.pdf")
-
 # --- Main ---
-try:
-    if option == "Synthetic Demo":
-        show_synthetic_demo()
-    else:
-        st.info("Upload PDF/Image functionality not implemented in this snippet.")
-except Exception as e:
-    st.error(f"Error: {e}")
-    st.sidebar.error(f"Error: {e}")
+if option == "Upload PDF/Image":
+    st.title("Upload PDF or Image")
+    uploaded_file = st.file_uploader("Choose a PDF or image...", type=["pdf", "png", "jpg", "jpeg"])
+
+    if uploaded_file is not None:
+        if uploaded_file.type == "application/pdf":
+            text = extract_text_from_pdf(uploaded_file)
+        else:
+            image = Image.open(uploaded_file)
+            reader = easyocr.Reader(["en"])
+            result = reader.readtext(np.array(image))
+            text = " ".join([res[1] for res in result])
+
+        st.subheader("Extracted Text")
+        st.text_area("Text from PDF/Image", text, height=300)
+
+        # Extract parameters
+        parameters = extract_parameters_from_text(text)
+        df = pd.DataFrame([parameters])
+
+        st.subheader("Extracted Parameters")
+        st.dataframe(df)
+
+        # Downloads
+        st.download_button("Download CSV", df.to_csv(index=False).encode("utf-8"), "extracted_data.csv")
+        st.download_button("Download PDF", export_pdf(df), "extracted_data.pdf")
+
+else:
+    st.title("Synthetic Demo")
+    # Your synthetic demo code here
