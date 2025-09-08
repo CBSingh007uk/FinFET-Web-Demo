@@ -9,8 +9,7 @@ pdf2image
 easyocr
 opencv-python-headless
 pytesseract
+PyMuPDF==1.23.6
 pdfplumber
 openpyxl
 camelot-py[cv]
-PyMuPDF==1.23.6
-
