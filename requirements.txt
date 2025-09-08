@@ -8,3 +8,4 @@ fpdf
 pdf2image
 easyocr
 opencv-python-headless
+PyMuPDF
