@@ -1,13 +1,82 @@
-import streamlit as st
 import os
-import fitz  # PyMuPDF
-import pdfplumber
-import pandas as pd
 import re
-import io
+import pandas as pd
+from io import BytesIO
+from PIL import Image
+import streamlit as st
 
-# ---------------- PDF options ----------------
-pdf_options = { 
+# ---------- Optional imports ----------
+try:
+    import pdfplumber
+except ModuleNotFoundError:
+    pdfplumber = None
+
+try:
+    import fitz  # PyMuPDF
+except ModuleNotFoundError:
+    fitz = None
+
+try:
+    import pytesseract
+except ModuleNotFoundError:
+    pytesseract = None
+
+# ---------- CONFIG ----------
+PDF_FOLDER = "pdfs"
+PARAM_REGEXES = {
+    'Lg': r'(?:gate\s*length|L[_\s]?g)\s*[:=]?\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)',
+    'Hfin': r'(?:fin\s*height|H[_\s]?fin)\s*[:=]?\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)',
+    'EOT': r'(?:EOT|effective\s*oxide|oxide\s*thickness)\s*[:=]?\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)',
+    'Vth': r'(?:V[_\s]?th|threshold\s*voltage)\s*[:=]?\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)',
+    'Ion': r'(?:I[_\s]?on|on\s*current)\s*[:=]?\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)',
+    'Ioff': r'(?:I[_\s]?off|off\s*current|leakage)\s*[:=]?\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)',
+    'Id': r'(?:I[_\s]?d|drain\s*current)\s*[:=]?\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)',
+    'Vds': r'(?:V[_\s]?ds|drain\s*voltage)\s*[:=]?\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)',
+}
+
+# ---------- Helpers ----------
+def extract_text_from_pdf(pdf_path):
+    """Extract text using pdfplumber or PyMuPDF fallback"""
+    text = ""
+    if pdfplumber:
+        try:
+            with pdfplumber.open(pdf_path) as pdf:
+                for page in pdf.pages:
+                    text += page.extract_text() or ""
+            return text
+        except Exception:
+            pass
+    if fitz:
+        try:
+            doc = fitz.open(pdf_path)
+            for page in doc:
+                text += page.get_text()
+            doc.close()
+            return text
+        except Exception:
+            pass
+    return ""
+
+def extract_params_from_text(text):
+    """Return dict of FinFET parameters found in text"""
+    params = {}
+    for p, rx in PARAM_REGEXES.items():
+        m = re.search(rx, text, re.IGNORECASE)
+        if m:
+            params[p] = m.group(1)
+    return params
+
+def ocr_image_to_text(img):
+    if pytesseract is None:
+        return ""
+    return pytesseract.image_to_string(img)
+
+# ---------- Streamlit UI ----------
+st.set_page_config(page_title="FinFET Data Extractor", layout="wide")
+st.title("📄 FinFET Parameter Extractor")
+
+# PDF selection
+pdf_options = {
     "Arxiv 1905.11207 v3": "pdfs/1905.11207v3.pdf",
     "Arxiv 2007.13168 v4": "pdfs/2007.13168v4.pdf",
     "Arxiv 2007.14448 v1": "pdfs/2007.14448v1.pdf",
@@ -15,86 +84,61 @@ pdf_options = {
     "Arxiv 2501.15190 v1": "pdfs/2501.15190v1.pdf"
 }
 
-st.title("FinFET Parameter Extractor")
+pdf_choice = st.selectbox("Select a PDF from local folder:", list(pdf_options.keys()))
+pdf_path = pdf_options[pdf_choice]
 
-# ---------------- Select or Upload PDF ----------------
-pdf_choice = st.selectbox("Select a PDF from library", list(pdf_options.keys()))
-uploaded_file = st.file_uploader("Or upload your own PDF", type="pdf")
-
-if uploaded_file is not None:
+uploaded_file = st.file_uploader("Or upload a PDF from your computer:", type="pdf")
+if uploaded_file:
     pdf_path = uploaded_file
-elif pdf_choice:
-    pdf_path = pdf_options[pdf_choice]
-else:
-    st.warning("Please select or upload a PDF.")
-    st.stop()
+    st.info(f"Processing uploaded file: {uploaded_file.name}")
 
-# ---------------- PDF Text Extraction ----------------
-def extract_text_from_pdf(path):
-    text = ""
-    # if uploaded_file is a BytesIO object
-    if isinstance(path, io.BytesIO):
-        try:
-            with fitz.open(stream=path.read(), filetype="pdf") as doc:
-                for page in doc:
-                    text += page.get_text()
-        except Exception:
-            path.seek(0)
-            with pdfplumber.open(path) as pdf:
-                for page in pdf.pages:
-                    text += page.extract_text() or ""
-    else:  # path is local file
-        try:
-            with fitz.open(path) as doc:
-                for page in doc:
-                    text += page.get_text()
-        except Exception:
-            with pdfplumber.open(path) as pdf:
-                for page in pdf.pages:
-                    text += page.extract_text() or ""
-    return text
+# Extract parameters
+if st.button("Extract Parameters"):
+    if isinstance(pdf_path, str) and not os.path.exists(pdf_path):
+        st.error(f"PDF not found: {pdf_path}")
+    else:
+        text = ""
+        if isinstance(pdf_path, str):
+            text = extract_text_from_pdf(pdf_path)
+        else:
+            # uploaded BytesIO file
+            try:
+                import tempfile
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmpf:
+                    tmpf.write(pdf_path.read())
+                    tmp_path = tmpf.name
+                text = extract_text_from_pdf(tmp_path)
+            except Exception:
+                st.error("Failed to read uploaded PDF")
 
-pdf_text = extract_text_from_pdf(pdf_path)
+        # If no text from PDF, try OCR on first page image
+        if not text and fitz:
+            try:
+                doc = fitz.open(tmp_path if not isinstance(pdf_path, str) else pdf_path)
+                page = doc[0]
+                pix = page.get_pixmap(dpi=300)
+                img = Image.open(BytesIO(pix.tobytes("png")))
+                text = ocr_image_to_text(img)
+            except Exception:
+                st.warning("Failed OCR extraction")
 
-# ---------------- Parameter Extraction (basic regex) ----------------
-PARAM_REGEXES = {
-    'Lg': r'(?:gate\s*length|L[_\s]?g)\s*[:=]?\s*([\d\.]+)\s*(nm|um|µm)?',
-    'Hfin': r'(?:fin\s*height|H[_\s]?fin)\s*[:=]?\s*([\d\.]+)\s*(nm|um|µm)?',
-    'Wfin': r'(?:fin\s*width|W[_\s]?fin)\s*[:=]?\s*([\d\.]+)\s*(nm|um|µm)?',
-    'EOT': r'(?:EOT|effective\s*oxide|oxide\s*thickness)\s*[:=]?\s*([\d\.]+)\s*(nm|um|µm)?',
-    'Vth': r'(?:V[_\s]?th|threshold\s*voltage)\s*[:=]?\s*([\d\.]+)\s*(V)?',
-    'Ion': r'(?:I[_\s]?on|on\s*current)\s*[:=]?\s*([\d\.]+)\s*(uA|µA|nA)?',
-    'Ioff': r'(?:I[_\s]?off|off\s*current)\s*[:=]?\s*([\d\.]+)\s*(uA|µA|nA)?',
-    'Id': r'(?:I[_\s]?d|drain\s*current)\s*[:=]?\s*([\d\.]+)\s*(uA|µA|nA)?',
-    'Vds': r'(?:V[_\s]?ds|drain\s*voltage)\s*[:=]?\s*([\d\.]+)\s*(V)?',
-}
-
-def extract_params(text):
-    results = {}
-    for param, rx in PARAM_REGEXES.items():
-        m = re.search(rx, text, re.IGNORECASE)
-        if m:
-            val, unit = m.groups()
-            if val:
-                results[param] = f"{val} {unit or ''}".strip()
-    return results
-
-params_dict = extract_params(pdf_text)
-
-if params_dict:
-    st.subheader("Extracted Parameters")
-    df_params = pd.DataFrame([params_dict])
-    st.dataframe(df_params, use_container_width=True)
-    
-    # Excel download
-    towrite = io.BytesIO()
-    df_params.to_excel(towrite, index=False, engine='openpyxl')
-    towrite.seek(0)
-    st.download_button(
-        label="⬇️ Download Excel",
-        data=towrite,
-        file_name="finfet_params.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-else:
-    st.warning("No parameters found in this PDF. Try a different file.")
+        if not text:
+            st.warning("No text extracted from PDF.")
+        else:
+            params = extract_params_from_text(text)
+            if not params:
+                st.warning("No FinFET parameters detected.")
+            else:
+                df = pd.DataFrame([params])
+                st.subheader("Extracted Parameters")
+                st.dataframe(df, use_container_width=True)
+                # Download Excel
+                towrite = BytesIO()
+                df.to_excel(towrite, index=False, engine='openpyxl')
+                towrite.seek(0)
+                st.download_button(
+                    label="⬇️ Download Excel",
+                    data=towrite,
+                    file_name="finfet_params.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
