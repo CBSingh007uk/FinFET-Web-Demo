@@ -1,27 +1,31 @@
-# finfet_streamlit_demo.py
 import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from PIL import Image
-import cv2
 import os
-from pdf2image import convert_from_path
+import io
+import re
+from PIL import Image
+
+# Optional: PDF processing
 import camelot
+import fitz  # PyMuPDF
+import pytesseract
 
-# ------------------------
+# -------------------------------
 # Logo
-# ------------------------
-st.set_page_config(page_title="FinFET Data Extractor", layout="wide")
-st.image("logo.png", width=200)
+# -------------------------------
+logo_path = "logo.png"  # main folder
+if os.path.exists(logo_path):
+    st.sidebar.image(logo_path, width=150)
+    st.image(logo_path, width=200)  # main page center
+else:
+    st.warning("Logo not found!")
 
-# ------------------------
-# Sidebar Options
-# ------------------------
-st.sidebar.title("FinFET Demo Options")
-
-demo_option = st.sidebar.radio("Choose Input Option:",
-                               ["Synthetic Demo", "Predefined PDF", "Browse PDF"])
+# -------------------------------
+# Sidebar: Input selection
+# -------------------------------
+option = st.sidebar.selectbox("Choose Input", ["Synthetic Demo", "Local PDF", "Browse PDF"])
 
 pdf_options = {
     "Arxiv 1905.11207 v3": "pdfs/1905.11207v3.pdf",
@@ -31,130 +35,111 @@ pdf_options = {
     "Arxiv 2501.15190 v1": "pdfs/2501.15190v1.pdf"
 }
 
-uploaded_file = None
-selected_pdf = None
-
-if demo_option == "Predefined PDF":
-    selected_pdf = st.sidebar.selectbox("Select PDF", list(pdf_options.keys()))
-elif demo_option == "Browse PDF":
-    uploaded_file = st.sidebar.file_uploader("Upload PDF", type=["pdf"])
-
-# ------------------------
-# Synthetic Demo Dataset
-# ------------------------
+# -------------------------------
+# Synthetic Demo Functions
+# -------------------------------
 def synthetic_parameters():
-    """Enhanced synthetic FinFET dataset"""
     data = [
-        {"Node":"7 nm","Lg (nm)":15,"Hfin (nm)":40,"EOT (nm)":0.6,"ID (A/cm²)":1.8e4,"Vth (V)":0.32,"Ion/Ioff":2.5e6,"gm (µS/µm)":2600},
-        {"Node":"5 nm","Lg (nm)":12,"Hfin (nm)":45,"EOT (nm)":0.55,"ID (A/cm²)":2.0e4,"Vth (V)":0.30,"Ion/Ioff":3.0e6,"gm (µS/µm)":2800},
-        {"Node":"4 nm","Lg (nm)":9,"Hfin (nm)":50,"EOT (nm)":0.50,"ID (A/cm²)":2.3e4,"Vth (V)":0.28,"Ion/Ioff":4.0e6,"gm (µS/µm)":3100},
-        {"Node":"3 nm","Lg (nm)":7,"Hfin (nm)":55,"EOT (nm)":0.48,"ID (A/cm²)":2.6e4,"Vth (V)":0.25,"Ion/Ioff":5.0e6,"gm (µS/µm)":3400},
-        {"Node":"2 nm","Lg (nm)":5,"Hfin (nm)":60,"EOT (nm)":0.45,"ID (A/cm²)":2.9e4,"Vth (V)":0.22,"Ion/Ioff":6.0e6,"gm (µS/µm)":3600},
+        {"Node":"5 nm","Lg (nm)":12,"Hfin (nm)":45,"EOT (nm)":0.55,"ID (A/cm²)":2.0e4,"Vth (V)":0.30,"Ion/Ioff":3.0e6,"gm (µS/µm)":2800,"Rsd (Ω·µm)":70,"Cgg (fF/µm)":1.2,"Delay (ps)":1.0},
+        {"Node":"4 nm","Lg (nm)":9,"Hfin (nm)":50,"EOT (nm)":0.50,"ID (A/cm²)":2.3e4,"Vth (V)":0.28,"Ion/Ioff":4.0e6,"gm (µS/µm)":3100,"Rsd (Ω·µm)":60,"Cgg (fF/µm)":1.4,"Delay (ps)":0.8},
+        {"Node":"3 nm","Lg (nm)":7,"Hfin (nm)":55,"EOT (nm)":0.48,"ID (A/cm²)":2.6e4,"Vth (V)":0.25,"Ion/Ioff":5.0e6,"gm (µS/µm)":3400,"Rsd (Ω·µm)":50,"Cgg (fF/µm)":1.6,"Delay (ps)":0.6},
+        {"Node":"2 nm","Lg (nm)":5,"Hfin (nm)":60,"EOT (nm)":0.45,"ID (A/cm²)":3.0e4,"Vth (V)":0.22,"Ion/Ioff":6.0e6,"gm (µS/µm)":3600,"Rsd (Ω·µm)":45,"Cgg (fF/µm)":1.8,"Delay (ps)":0.5},
+        {"Node":"1.5 nm","Lg (nm)":4,"Hfin (nm)":65,"EOT (nm)":0.42,"ID (A/cm²)":3.5e4,"Vth (V)":0.20,"Ion/Ioff":7.0e6,"gm (µS/µm)":3800,"Rsd (Ω·µm)":40,"Cgg (fF/µm)":2.0,"Delay (ps)":0.45},
     ]
     return pd.DataFrame(data)
 
-# ------------------------
-# Automatic Id-Vg Curve Detection
-# ------------------------
-def extract_id_vg_from_image(img_pil):
-    """Detect curves in an image automatically and return Vg vs Id"""
-    img = np.array(img_pil.convert("RGB"))
-    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-    gray = cv2.GaussianBlur(gray, (3,3),0)
-    edges = cv2.Canny(gray,50,150)
-    contours,_ = cv2.findContours(edges.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
-    curves = []
-    for cnt in contours:
-        if cv2.contourArea(cnt) < 50:
-            continue
-        xs, ys = cnt[:,0,0], cnt[:,0,1]
-        # invert y-axis for plotting
-        ys = np.max(ys) - ys
-        curves.append({"x": xs, "y": ys})
-    return curves
+# -------------------------------
+# Synthetic Plots
+# -------------------------------
+def plot_synthetic_iv(df):
+    plt.figure(figsize=(6,4))
+    for node in df['Node']:
+        x = np.linspace(0, 1.0, 100)
+        y = 1e-5 * df.loc[df['Node']==node, 'ID (A/cm²)'].values[0] * (x+0.1)**1.5
+        plt.plot(x, y, label=node)
+    plt.xlabel("Vg (V)")
+    plt.ylabel("Id (A/cm²)")
+    plt.title("Synthetic Id–Vg Curves")
+    plt.legend()
+    st.pyplot(plt.gcf())
 
-# ------------------------
-# Display Scaling Plots
-# ------------------------
 def plot_scaling(df):
-    st.subheader("Scaling Plots")
-    fig, ax = plt.subplots(2,2, figsize=(12,8))
-    # Lg vs gm
-    ax[0,0].plot(df["Lg (nm)"], df["gm (µS/µm)"], marker='o')
-    ax[0,0].set_xlabel("Lg (nm)"); ax[0,0].set_ylabel("gm (µS/µm)")
-    ax[0,0].set_title("Lg vs gm")
-    # Vth vs Ion/Ioff
-    ax[0,1].plot(df["Vth (V)"], df["Ion/Ioff"], marker='o', color='green')
-    ax[0,1].set_xlabel("Vth (V)"); ax[0,1].set_ylabel("Ion/Ioff")
-    ax[0,1].set_title("Vth vs Ion/Ioff")
-    # ID vs Lg
-    ax[1,0].plot(df["Lg (nm)"], df["ID (A/cm²)"], marker='o', color='red')
-    ax[1,0].set_xlabel("Lg (nm)"); ax[1,0].set_ylabel("ID (A/cm²)")
-    ax[1,0].set_title("ID vs Lg")
-    # gm vs Ion/Ioff
-    ax[1,1].plot(df["gm (µS/µm)"], df["Ion/Ioff"], marker='o', color='orange')
-    ax[1,1].set_xlabel("gm (µS/µm)"); ax[1,1].set_ylabel("Ion/Ioff")
-    ax[1,1].set_title("gm vs Ion/Ioff")
-    plt.tight_layout()
+    fig, axes = plt.subplots(1,2, figsize=(10,4))
+    axes[0].plot(df['Lg (nm)'], df['gm (µS/µm)'], marker='o')
+    axes[0].set_xlabel("Lg (nm)"); axes[0].set_ylabel("gm (µS/µm)"); axes[0].set_title("Lg vs gm")
+    
+    axes[1].plot(df['Vth (V)'], df['Ion/Ioff'], marker='o')
+    axes[1].set_xlabel("Vth (V)"); axes[1].set_ylabel("Ion/Ioff"); axes[1].set_title("Vth vs Ion/Ioff")
     st.pyplot(fig)
 
-# ------------------------
-# Main Display
-# ------------------------
-if demo_option == "Synthetic Demo":
-    df = synthetic_parameters()
-    st.subheader("Synthetic FinFET Dataset")
-    st.dataframe(df)
-    plot_scaling(df)
-    # Generate synthetic Id-Vg curve
-    st.subheader("Synthetic Id-Vg Curves")
-    Vg = np.linspace(0,1,50)
-    for idx, row in df.iterrows():
-        Id = row["ID (A/cm²)"] * (1-np.exp(-Vg/row["Vth (V)"]))
-        st.line_chart(pd.DataFrame({"Vg": Vg, f"Id Node {row['Node']}": Id}).set_index("Vg"))
-
-elif demo_option == "Predefined PDF" or demo_option == "Browse PDF":
-    if demo_option == "Predefined PDF" and selected_pdf:
-        pdf_path = pdf_options[selected_pdf]
-    elif demo_option == "Browse PDF" and uploaded_file:
-        pdf_path = uploaded_file
-    else:
-        pdf_path = None
-
-    if pdf_path:
-        st.subheader("PDF Processing Results")
-        # Convert PDF to images
+# -------------------------------
+# PDF Table Extraction
+# -------------------------------
+def extract_tables(pdf_path):
+    tables = []
+    try:
+        # Camelot stream flavor (text PDFs)
+        tables = camelot.read_pdf(pdf_path, flavor='stream', pages='all')
+        tables = [t.df for t in tables if not t.df.empty]
+    except Exception as e:
+        st.warning(f"Camelot extraction failed: {e}")
+    
+    # Fallback: OCR
+    if not tables:
+        st.info("Falling back to OCR table extraction")
         try:
-            if isinstance(pdf_path, str):
-                pages = convert_from_path(pdf_path, dpi=300)
-            else:
-                pages = convert_from_path(pdf_path, dpi=300, first_page=0)
+            doc = fitz.open(pdf_path)
+            for page in doc:
+                pix = page.get_pixmap()
+                img = Image.open(io.BytesIO(pix.tobytes("png")))
+                text = pytesseract.image_to_string(img)
+                lines = [l.strip() for l in text.splitlines() if l.strip()]
+                rows = []
+                for ln in lines:
+                    if len(re.findall(r'\d+\.?\d*', ln)) > 0:
+                        rows.append(ln.split())
+                if rows:
+                    tables.append(pd.DataFrame(rows))
         except Exception as e:
-            st.error(f"PDF to Image conversion failed: {e}")
-            pages = []
+            st.error(f"OCR table extraction failed: {e}")
+    
+    return tables
 
-        all_curves = []
-        for i, img in enumerate(pages):
-            st.markdown(f"**Page {i+1}**")
-            curves = extract_id_vg_from_image(img)
-            if curves:
-                st.success(f"Detected {len(curves)} curve(s) automatically")
-                for j,c in enumerate(curves):
-                    df_curve = pd.DataFrame({"Vg (a.u.)": c["x"], "Id (a.u.)": c["y"]})
-                    st.line_chart(df_curve.set_index("Vg (a.u.)"))
-            else:
-                st.warning("No curves detected automatically. PDF quality may be low or axes not clear.")
+# -------------------------------
+# Main App Logic
+# -------------------------------
+if option == "Synthetic Demo":
+    st.subheader("Synthetic FinFET Dataset")
+    df = synthetic_parameters()
+    st.dataframe(df)
+    plot_synthetic_iv(df)
+    plot_scaling(df)
 
-        # Table extraction with Camelot
-        if isinstance(pdf_path, str):
-            try:
-                tables = camelot.read_pdf(pdf_path, pages="all", flavor="stream")
-                st.subheader("Extracted Tables")
-                if tables:
-                    for ti, table in enumerate(tables):
-                        st.write(f"Table {ti+1}")
-                        st.dataframe(table.df)
-                else:
-                    st.warning("No tables detected. Try clearer PDFs.")
-            except Exception as e:
-                st.warning(f"Table extraction failed: {e}")
+elif option == "Local PDF":
+    pdf_choice = st.sidebar.selectbox("Select PDF", list(pdf_options.keys()))
+    extract_btn = st.sidebar.button("Extract")
+    if extract_btn:
+        pdf_path = pdf_options[pdf_choice]
+        st.info(f"Processing PDF: {pdf_path}")
+        tables = extract_tables(pdf_path)
+        if tables:
+            for i, t in enumerate(tables):
+                st.write(f"Table {i+1}")
+                st.dataframe(t)
+        else:
+            st.warning("No tables detected in PDF.")
+
+elif option == "Browse PDF":
+    uploaded_file = st.sidebar.file_uploader("Upload PDF", type=["pdf"])
+    extract_btn = st.sidebar.button("Extract")
+    if extract_btn and uploaded_file is not None:
+        with open("temp.pdf", "wb") as f:
+            f.write(uploaded_file.getbuffer())
+        st.info(f"Processing PDF: {uploaded_file.name}")
+        tables = extract_tables("temp.pdf")
+        if tables:
+            for i, t in enumerate(tables):
+                st.write(f"Table {i+1}")
+                st.dataframe(t)
+        else:
+            st.warning("No tables detected in PDF.")
