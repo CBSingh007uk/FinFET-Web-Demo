@@ -52,11 +52,11 @@ except:
 # GitHub PDF links
 # ------------------------
 github_pdfs = {
-    "1905.11207v3.pdf": "https://raw.githubusercontent.com/<YOUR_REPO>/pdfs/1905.11207v3.pdf",
-    "2007.13168v4.pdf": "https://raw.githubusercontent.com/<YOUR_REPO>/pdfs/2007.13168v4.pdf",
-    "2007.14448v1.pdf": "https://raw.githubusercontent.com/<YOUR_REPO>/pdfs/2007.14448v1.pdf",
-    "2407.18187v1.pdf": "https://raw.githubusercontent.com/<YOUR_REPO>/pdfs/2407.18187v1.pdf",
-    "2501.15190v1.pdf": "https://raw.githubusercontent.com/<YOUR_REPO>/pdfs/2501.15190v1.pdf"
+    "1905.11207v3.pdf": "https://raw.githubusercontent.com/CBSingh007uk/FinFET-Web-Demo/pdfs/1905.11207v3.pdf",
+    "2007.13168v4.pdf": "https://raw.githubusercontent.com/CBSingh007uk/FinFET-Web-Demo/pdfs/2007.13168v4.pdf",
+    "2007.14448v1.pdf": "https://raw.githubusercontent.com/CBSingh007uk/FinFET-Web-Demo/pdfs/2007.14448v1.pdf",
+    "2407.18187v1.pdf": "https://raw.githubusercontent.com/CBSingh007uk/FinFET-Web-Demo/pdfs/2407.18187v1.pdf",
+    "2501.15190v1.pdf": "https://raw.githubusercontent.com/CBSingh007uk/FinFET-Web-Demo/pdfs/2501.15190v1.pdf"
 }
 
 # ------------------------
