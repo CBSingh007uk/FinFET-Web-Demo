@@ -43,7 +43,7 @@ mode = st.sidebar.radio("Select Mode", ["Synthetic Demo", "GitHub PDF"])
 # ---------------- PDF Options ---------------- #
 pdf_options = { 
     "Arxiv 1905.11207 v3": "https://raw.githubusercontent.com/CBSingh007uk/FinFET-Web-Demo/main/pdfs/1905.11207v3.pdf",
-    "Arxiv 2007.13168 v4": "https://raw.githubusercontent.com/yourusername/yourrepo/main/pdfs/2007.13168v4.pdf",
+    "Arxiv 2007.13168 v4": "pdfs/2007.13168v4.pdf",
     "Arxiv 2007.14448 v1": "https://raw.githubusercontent.com/yourusername/yourrepo/main/pdfs/2007.14448v1.pdf",
     "Arxiv 2407.18187 v1": "https://raw.githubusercontent.com/yourusername/yourrepo/main/pdfs/2407.18187v1.pdf",
     "Arxiv 2501.15190 v1": "https://raw.githubusercontent.com/yourusername/yourrepo/main/pdfs/2501.15190v1.pdf"
