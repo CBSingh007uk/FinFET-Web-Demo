@@ -6,18 +6,25 @@ import re
 from PIL import Image
 import pytesseract
 
-# Attempt to import openpyxl for Excel export
+# Optional dependencies
+try:
+    import pdfplumber
+except ModuleNotFoundError:
+    pdfplumber = None
+try:
+    import camelot
+except ModuleNotFoundError:
+    camelot = None
 try:
     import openpyxl
     EXCEL_AVAILABLE = True
 except ModuleNotFoundError:
     EXCEL_AVAILABLE = False
-
-# Optional: pdfplumber for table extraction
 try:
-    import pdfplumber
+    import cv2
 except ModuleNotFoundError:
-    pdfplumber = None
+    cv2 = None
+import numpy as np
 
 # ---------------------- PDF Options ----------------------
 pdf_options = {
@@ -28,23 +35,19 @@ pdf_options = {
     "Arxiv 2501.15190 v1": "pdfs/2501.15190v1.pdf"
 }
 
-# ---------------------- Streamlit UI ----------------------
-st.set_page_config(page_title="FinFET Parameter Extractor", layout="wide")
-st.title("📄 FinFET Parameter Extractor")
-st.write("Select a PDF from the list or upload your own PDF for parameter extraction.")
+st.set_page_config(page_title="FinFET Extractor", layout="wide")
+st.title("📄 FinFET Parameter Extractor & Curve Digitizer")
+st.write("Select a PDF or upload your own for multi-page extraction, table parsing, and Id–Vg digitization.")
 
-# Sidebar PDF selection
-st.sidebar.header("Select PDF")
+# ---------------------- Sidebar ----------------------
+st.sidebar.header("PDF Selection")
 selected_pdf_name = st.sidebar.selectbox("Choose a PDF", list(pdf_options.keys()))
 pdf_path = pdf_options[selected_pdf_name]
-
-# Optional PDF upload
-uploaded_file = st.file_uploader("Or upload a PDF from your computer", type="pdf")
+uploaded_file = st.file_uploader("Or upload your own PDF", type="pdf")
 if uploaded_file is not None:
-    pdf_path = uploaded_file  # Use uploaded PDF
+    pdf_path = uploaded_file
 
-# ---------------------- Parameter Extraction ----------------------
-# Standard FinFET parameters
+# ---------------------- Regex for parameters ----------------------
 PARAM_REGEXES = {
     'Lg': r'(?:gate\s*length|L[_\s]?g)\s*[:=]?\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)(\s*[a-zA-Zµμ]*)?',
     'Hfin': r'(?:fin\s*height|H[_\s]?fin)\s*[:=]?\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)(\s*[a-zA-Zµμ]*)?',
@@ -57,8 +60,8 @@ PARAM_REGEXES = {
     'Vds': r'(?:V[_\s]?ds|drain\s*voltage)\s*[:=]?\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)(\s*[a-zA-Z%µμ]*)?',
 }
 
+# ---------------------- Extraction Functions ----------------------
 def extract_params_from_text(text):
-    """Extract FinFET parameters using regex."""
     results = {}
     for param, regex in PARAM_REGEXES.items():
         match = re.search(regex, text, re.IGNORECASE)
@@ -68,49 +71,83 @@ def extract_params_from_text(text):
             results[param] = f"{value} {unit}".strip()
     return results
 
-def extract_parameters(pdf_file):
-    """Extract parameters from a PDF or uploaded file."""
-    text_content = ""
+def extract_tables_from_pdf(path):
+    tables = []
+    if camelot and isinstance(path, str) and os.path.exists(path):
+        try:
+            tbs = camelot.read_pdf(path, pages='all', flavor='lattice')
+            tables.extend([t.df for t in tbs if not t.df.empty])
+        except:
+            pass
+    return tables
 
-    # pdfplumber extraction
-    if pdfplumber and hasattr(pdf_file, "read"):
-        # Uploaded file
-        with pdfplumber.open(pdf_file) as pdf:
-            for page in pdf.pages:
-                text_content += page.extract_text() or ""
-    elif pdfplumber and isinstance(pdf_file, str) and os.path.exists(pdf_file):
-        # Local file
-        with pdfplumber.open(pdf_file) as pdf:
-            for page in pdf.pages:
-                text_content += page.extract_text() or ""
+def ocr_pdf_page(page_image):
+    if cv2:
+        img = np.array(page_image.convert("RGB"))
+        gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+        _, thresh = cv2.threshold(gray,0,255,cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        img_pil = Image.fromarray(thresh)
     else:
-        # fallback: OCR on first page
+        img_pil = page_image
+    text = pytesseract.image_to_string(img_pil)
+    return text
+
+def extract_from_pdf(pdf_file):
+    pages_data = []
+    tables_all = []
+
+    if pdfplumber and hasattr(pdf_file, "read"):
+        pdf_obj = pdfplumber.open(pdf_file)
+    elif pdfplumber and isinstance(pdf_file, str):
+        pdf_obj = pdfplumber.open(pdf_file)
+    else:
+        pdf_obj = None
+
+    if pdf_obj:
+        for i, page in enumerate(pdf_obj.pages, start=1):
+            text = page.extract_text() or ""
+            params = extract_params_from_text(text)
+            pages_data.append({"page": i, **params})
+    else:
+        # fallback: first page OCR
         if hasattr(pdf_file, "read"):
             img = Image.open(pdf_file)
         else:
             img = Image.open(pdf_file)
-        text_content = pytesseract.image_to_string(img)
+        text = ocr_pdf_page(img)
+        params = extract_params_from_text(text)
+        pages_data.append({"page": 1, **params})
 
-    params_dict = extract_params_from_text(text_content)
-    if not params_dict:
-        st.warning("No parameters detected. The PDF may require OCR or improved regex patterns.")
-    df = pd.DataFrame(params_dict.items(), columns=["Parameter", "Value"])
-    return df
+    # table extraction
+    if isinstance(pdf_file, str):
+        tables_all = extract_tables_from_pdf(pdf_file)
 
-# ---------------------- Extraction Button ----------------------
-if st.button("🔍 Extract Parameters"):
+    return pd.DataFrame(pages_data), tables_all
+
+# ---------------------- Button ----------------------
+if st.button("🔍 Extract Parameters & Tables"):
     try:
-        df = extract_parameters(pdf_path)
+        df_params, tables = extract_from_pdf(pdf_path)
         st.subheader("Extracted Parameters")
-        st.dataframe(df, use_container_width=True)
+        st.dataframe(df_params, use_container_width=True)
 
-        # Download button
+        # Download Excel/CSV
         towrite = io.BytesIO()
         if EXCEL_AVAILABLE:
-            df.to_excel(towrite, index=False, engine='openpyxl')
+            df_params.to_excel(towrite, index=False, engine='openpyxl')
             st.download_button("⬇️ Download Excel", towrite.getvalue(), file_name="finfet_params.xlsx")
         else:
-            csv_data = df.to_csv(index=False).encode('utf-8')
+            csv_data = df_params.to_csv(index=False).encode('utf-8')
             st.download_button("⬇️ Download CSV", csv_data, file_name="finfet_params.csv")
+
+        # Show extracted tables
+        if tables:
+            st.subheader("Detected Tables")
+            for i, t in enumerate(tables, start=1):
+                st.write(f"Table {i}")
+                st.dataframe(t)
+        else:
+            st.info("No tables detected.")
+
     except Exception as e:
         st.error(f"Extraction failed: {e}")
