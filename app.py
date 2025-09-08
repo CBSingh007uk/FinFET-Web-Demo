@@ -27,21 +27,23 @@ try:
 except ModuleNotFoundError:
     cv2 = None
 
-# ---------------------- PDF Options ----------------------
-pdf_options = {
-    "Arxiv 1905.11207 v3": "pdfs/1905.11207v3.pdf",
-    "Arxiv 2007.13168 v4": "pdfs/2007.13168v4.pdf",
-}
+# ---------------------- App Layout ----------------------
+st.set_page_config(page_title="FinFET Extractor Demo", layout="wide")
 
-st.set_page_config(page_title="FinFET Extractor", layout="wide")
-st.title("📄 FinFET Parameter & Curve Extractor")
-st.write("Extract parameters, detect tables, and digitize Id–Vg curves from PDFs.")
+# Logo (replace path with your logo file if available)
+st.image("logo.png", width=200)
+st.title("📄 FinFET Parameter & Curve Extractor Demo")
+st.write("Synthetic demo for parameter extraction, table detection, and Id–Vg curve digitization.")
 
 # ---------------------- Sidebar ----------------------
 st.sidebar.header("PDF Selection")
-selected_pdf_name = st.sidebar.selectbox("Choose a PDF", list(pdf_options.keys()))
-pdf_path = pdf_options[selected_pdf_name]
-uploaded_file = st.file_uploader("Or upload your own PDF", type="pdf")
+synthetic_pdfs = {
+    "Demo PDF 1": "synthetic/finfet_demo1.pdf",
+    "Demo PDF 2": "synthetic/finfet_demo2.pdf"
+}
+selected_pdf_name = st.sidebar.selectbox("Choose a demo PDF", list(synthetic_pdfs.keys()))
+pdf_path = synthetic_pdfs[selected_pdf_name]
+uploaded_file = st.sidebar.file_uploader("Or upload your own PDF", type="pdf")
 if uploaded_file is not None:
     pdf_path = uploaded_file
 
@@ -93,7 +95,6 @@ def ocr_pdf_page(page_image):
     text = pytesseract.image_to_string(img_pil)
     return text
 
-# ---------------------- Id–Vg Digitization ----------------------
 def digitize_idvg(image_pil):
     img = np.array(image_pil.convert("RGB"))
     if cv2 is None:
@@ -104,17 +105,16 @@ def digitize_idvg(image_pil):
     ys, xs = np.where(edges > 0)
     if len(xs) == 0:
         return None
-    # simple scatter: map pixel to normalized coordinates
     xs_norm = (xs - xs.min()) / (xs.max() - xs.min())
     ys_norm = (ys - ys.min()) / (ys.max() - ys.min())
     return xs_norm, ys_norm
 
+# ---------------------- PDF Extraction ----------------------
 def extract_from_pdf(pdf_file):
     pages_data = []
     tables_all = []
     curves_all = []
 
-    # Open PDF
     pdf_obj = None
     if pdfplumber and hasattr(pdf_file, "read"):
         pdf_obj = pdfplumber.open(pdf_file)
@@ -127,7 +127,7 @@ def extract_from_pdf(pdf_file):
             params = extract_params_from_text(text)
             pages_data.append({"page": i, **params})
 
-            # Curve extraction from images
+            # Curve extraction
             if page.images:
                 img_obj = page.to_image(resolution=200).original
                 curves = digitize_idvg(img_obj)
@@ -145,7 +145,7 @@ def extract_from_pdf(pdf_file):
         if curves:
             curves_all.append({"page": 1, "x": curves[0], "y": curves[1]})
 
-    # table extraction
+    # Table extraction
     if isinstance(pdf_file, str):
         tables_all = extract_tables_from_pdf(pdf_file)
 
@@ -167,14 +167,14 @@ if st.button("🔍 Extract Parameters, Tables & Curves"):
             csv_data = df_params.to_csv(index=False).encode('utf-8')
             st.download_button("⬇️ Download CSV", csv_data, file_name="finfet_params.csv")
 
-        # Show extracted tables
+        # Show tables
         if tables:
             st.subheader("Detected Tables")
             for i, t in enumerate(tables, start=1):
                 st.write(f"Table {i}")
                 st.dataframe(t)
         else:
-            st.info("No tables detected. Try enabling 'stream' flavor in Camelot or upload clearer PDFs.")
+            st.info("No tables detected. Try clearer PDFs or enable 'stream' flavor in Camelot.")
 
         # Plot extracted curves
         if curves:
@@ -184,7 +184,6 @@ if st.button("🔍 Extract Parameters, Tables & Curves"):
                 ax.plot(c['x'], c['y'], label=f"Page {c['page']}")
             ax.set_xlabel("Vg (normalized)")
             ax.set_ylabel("Id (normalized)")
-            ax.set_title("Digitized Id–Vg Curves")
             ax.legend()
             st.pyplot(fig)
         else:
