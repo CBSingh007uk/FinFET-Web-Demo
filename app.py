@@ -13,7 +13,7 @@ import camelot
 # Logo
 # ------------------------
 st.set_page_config(page_title="FinFET Data Extractor", layout="wide")
-st.image("pdfs/logo.png", width=200)
+st.image("logo.png", width=200)
 
 # ------------------------
 # Sidebar Options
