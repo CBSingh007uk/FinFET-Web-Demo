@@ -1,81 +1,25 @@
+import streamlit as st
+import pandas as pd
+import io
 import os
 import re
-import pandas as pd
-from io import BytesIO
 from PIL import Image
-import streamlit as st
+import pytesseract
 
-# ---------- Optional imports ----------
+# Attempt to import openpyxl for Excel export
+try:
+    import openpyxl
+    EXCEL_AVAILABLE = True
+except ModuleNotFoundError:
+    EXCEL_AVAILABLE = False
+
+# Optional: pdfplumber for table extraction
 try:
     import pdfplumber
 except ModuleNotFoundError:
     pdfplumber = None
 
-try:
-    import fitz  # PyMuPDF
-except ModuleNotFoundError:
-    fitz = None
-
-try:
-    import pytesseract
-except ModuleNotFoundError:
-    pytesseract = None
-
-# ---------- CONFIG ----------
-PDF_FOLDER = "pdfs"
-PARAM_REGEXES = {
-    'Lg': r'(?:gate\s*length|L[_\s]?g)\s*[:=]?\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)',
-    'Hfin': r'(?:fin\s*height|H[_\s]?fin)\s*[:=]?\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)',
-    'EOT': r'(?:EOT|effective\s*oxide|oxide\s*thickness)\s*[:=]?\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)',
-    'Vth': r'(?:V[_\s]?th|threshold\s*voltage)\s*[:=]?\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)',
-    'Ion': r'(?:I[_\s]?on|on\s*current)\s*[:=]?\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)',
-    'Ioff': r'(?:I[_\s]?off|off\s*current|leakage)\s*[:=]?\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)',
-    'Id': r'(?:I[_\s]?d|drain\s*current)\s*[:=]?\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)',
-    'Vds': r'(?:V[_\s]?ds|drain\s*voltage)\s*[:=]?\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)',
-}
-
-# ---------- Helpers ----------
-def extract_text_from_pdf(pdf_path):
-    """Extract text using pdfplumber or PyMuPDF fallback"""
-    text = ""
-    if pdfplumber:
-        try:
-            with pdfplumber.open(pdf_path) as pdf:
-                for page in pdf.pages:
-                    text += page.extract_text() or ""
-            return text
-        except Exception:
-            pass
-    if fitz:
-        try:
-            doc = fitz.open(pdf_path)
-            for page in doc:
-                text += page.get_text()
-            doc.close()
-            return text
-        except Exception:
-            pass
-    return ""
-
-def extract_params_from_text(text):
-    """Return dict of FinFET parameters found in text"""
-    params = {}
-    for p, rx in PARAM_REGEXES.items():
-        m = re.search(rx, text, re.IGNORECASE)
-        if m:
-            params[p] = m.group(1)
-    return params
-
-def ocr_image_to_text(img):
-    if pytesseract is None:
-        return ""
-    return pytesseract.image_to_string(img)
-
-# ---------- Streamlit UI ----------
-st.set_page_config(page_title="FinFET Data Extractor", layout="wide")
-st.title("📄 FinFET Parameter Extractor")
-
-# PDF selection
+# ---------------------- PDF Options ----------------------
 pdf_options = {
     "Arxiv 1905.11207 v3": "pdfs/1905.11207v3.pdf",
     "Arxiv 2007.13168 v4": "pdfs/2007.13168v4.pdf",
@@ -84,61 +28,89 @@ pdf_options = {
     "Arxiv 2501.15190 v1": "pdfs/2501.15190v1.pdf"
 }
 
-pdf_choice = st.selectbox("Select a PDF from local folder:", list(pdf_options.keys()))
-pdf_path = pdf_options[pdf_choice]
+# ---------------------- Streamlit UI ----------------------
+st.set_page_config(page_title="FinFET Parameter Extractor", layout="wide")
+st.title("📄 FinFET Parameter Extractor")
+st.write("Select a PDF from the list or upload your own PDF for parameter extraction.")
 
-uploaded_file = st.file_uploader("Or upload a PDF from your computer:", type="pdf")
-if uploaded_file:
-    pdf_path = uploaded_file
-    st.info(f"Processing uploaded file: {uploaded_file.name}")
+# Sidebar PDF selection
+st.sidebar.header("Select PDF")
+selected_pdf_name = st.sidebar.selectbox("Choose a PDF", list(pdf_options.keys()))
+pdf_path = pdf_options[selected_pdf_name]
 
-# Extract parameters
-if st.button("Extract Parameters"):
-    if isinstance(pdf_path, str) and not os.path.exists(pdf_path):
-        st.error(f"PDF not found: {pdf_path}")
+# Optional PDF upload
+uploaded_file = st.file_uploader("Or upload a PDF from your computer", type="pdf")
+if uploaded_file is not None:
+    pdf_path = uploaded_file  # Use uploaded PDF
+
+# ---------------------- Parameter Extraction ----------------------
+# Standard FinFET parameters
+PARAM_REGEXES = {
+    'Lg': r'(?:gate\s*length|L[_\s]?g)\s*[:=]?\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)(\s*[a-zA-Zµμ]*)?',
+    'Hfin': r'(?:fin\s*height|H[_\s]?fin)\s*[:=]?\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)(\s*[a-zA-Zµμ]*)?',
+    'Wfin': r'(?:fin\s*width|W[_\s]?fin)\s*[:=]?\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)(\s*[a-zA-Zµμ]*)?',
+    'EOT': r'(?:EOT|effective\s*oxide|oxide\s*thickness)\s*[:=]?\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)(\s*[a-zA-Zµμ]*)?',
+    'Vth': r'(?:V[_\s]?th|threshold\s*voltage)\s*[:=]?\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)(\s*[a-zA-Z%µμ]*)?',
+    'Ion': r'(?:I[_\s]?on|on\s*current)\s*[:=]?\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)(\s*[a-zA-Zµμ/]*)?',
+    'Ioff': r'(?:I[_\s]?off|off\s*current|leakage)\s*[:=]?\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)(\s*[a-zA-Zµμ/]*)?',
+    'Id': r'(?:I[_\s]?d|drain\s*current)\s*[:=]?\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)(\s*[a-zA-Zµμ/]*)?',
+    'Vds': r'(?:V[_\s]?ds|drain\s*voltage)\s*[:=]?\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)(\s*[a-zA-Z%µμ]*)?',
+}
+
+def extract_params_from_text(text):
+    """Extract FinFET parameters using regex."""
+    results = {}
+    for param, regex in PARAM_REGEXES.items():
+        match = re.search(regex, text, re.IGNORECASE)
+        if match:
+            value = match.group(1)
+            unit = match.group(2).strip() if match.group(2) else ""
+            results[param] = f"{value} {unit}".strip()
+    return results
+
+def extract_parameters(pdf_file):
+    """Extract parameters from a PDF or uploaded file."""
+    text_content = ""
+
+    # pdfplumber extraction
+    if pdfplumber and hasattr(pdf_file, "read"):
+        # Uploaded file
+        with pdfplumber.open(pdf_file) as pdf:
+            for page in pdf.pages:
+                text_content += page.extract_text() or ""
+    elif pdfplumber and isinstance(pdf_file, str) and os.path.exists(pdf_file):
+        # Local file
+        with pdfplumber.open(pdf_file) as pdf:
+            for page in pdf.pages:
+                text_content += page.extract_text() or ""
     else:
-        text = ""
-        if isinstance(pdf_path, str):
-            text = extract_text_from_pdf(pdf_path)
+        # fallback: OCR on first page
+        if hasattr(pdf_file, "read"):
+            img = Image.open(pdf_file)
         else:
-            # uploaded BytesIO file
-            try:
-                import tempfile
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmpf:
-                    tmpf.write(pdf_path.read())
-                    tmp_path = tmpf.name
-                text = extract_text_from_pdf(tmp_path)
-            except Exception:
-                st.error("Failed to read uploaded PDF")
+            img = Image.open(pdf_file)
+        text_content = pytesseract.image_to_string(img)
 
-        # If no text from PDF, try OCR on first page image
-        if not text and fitz:
-            try:
-                doc = fitz.open(tmp_path if not isinstance(pdf_path, str) else pdf_path)
-                page = doc[0]
-                pix = page.get_pixmap(dpi=300)
-                img = Image.open(BytesIO(pix.tobytes("png")))
-                text = ocr_image_to_text(img)
-            except Exception:
-                st.warning("Failed OCR extraction")
+    params_dict = extract_params_from_text(text_content)
+    if not params_dict:
+        st.warning("No parameters detected. The PDF may require OCR or improved regex patterns.")
+    df = pd.DataFrame(params_dict.items(), columns=["Parameter", "Value"])
+    return df
 
-        if not text:
-            st.warning("No text extracted from PDF.")
+# ---------------------- Extraction Button ----------------------
+if st.button("🔍 Extract Parameters"):
+    try:
+        df = extract_parameters(pdf_path)
+        st.subheader("Extracted Parameters")
+        st.dataframe(df, use_container_width=True)
+
+        # Download button
+        towrite = io.BytesIO()
+        if EXCEL_AVAILABLE:
+            df.to_excel(towrite, index=False, engine='openpyxl')
+            st.download_button("⬇️ Download Excel", towrite.getvalue(), file_name="finfet_params.xlsx")
         else:
-            params = extract_params_from_text(text)
-            if not params:
-                st.warning("No FinFET parameters detected.")
-            else:
-                df = pd.DataFrame([params])
-                st.subheader("Extracted Parameters")
-                st.dataframe(df, use_container_width=True)
-                # Download Excel
-                towrite = BytesIO()
-                df.to_excel(towrite, index=False, engine='openpyxl')
-                towrite.seek(0)
-                st.download_button(
-                    label="⬇️ Download Excel",
-                    data=towrite,
-                    file_name="finfet_params.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
+            csv_data = df.to_csv(index=False).encode('utf-8')
+            st.download_button("⬇️ Download CSV", csv_data, file_name="finfet_params.csv")
+    except Exception as e:
+        st.error(f"Extraction failed: {e}")
