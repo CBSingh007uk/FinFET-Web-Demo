@@ -4,17 +4,15 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import cv2
 from PIL import Image
 import os
 import fitz  # PyMuPDF
 
 # ---------------------------
-# Logo
+# Sidebar Logo
 # ---------------------------
 logo_path = "logo.png"  # Ensure logo.png is in main folder
 st.sidebar.image(logo_path, width=150)
-st.image(logo_path, width=200, use_column_width=False)
 
 # ---------------------------
 # Sidebar: Common Options
@@ -25,14 +23,23 @@ option = st.sidebar.selectbox(
     ["Synthetic Demo", "Local PDF", "Browse PDF"]
 )
 
+st.sidebar.button("Extract Data")  # Common extract button placeholder
+
+# ---------------------------
+# Main Page Logo
+# ---------------------------
+st.image(logo_path, width=200)
+
 # ---------------------------
 # Synthetic Demo Data
 # ---------------------------
 def synthetic_parameters():
-    """IRDS-aligned synthetic FinFET dataset"""
+    """IRDS-aligned synthetic FinFET dataset for multiple nodes"""
     data = [
         {"Node":"7nm","Lg (nm)":15,"Hfin (nm)":40,"EOT (nm)":0.60,"ID (A/cm²)":1.8e4,
          "Vth (V)":0.32,"Ion/Ioff":2.5e6,"gm (µS/µm)":2600,"Rsd (Ω·µm)":80,"Cgg (fF/µm)":1.0,"Delay (ps)":1.2},
+        {"Node":"6nm","Lg (nm)":14,"Hfin (nm)":42,"EOT (nm)":0.58,"ID (A/cm²)":1.9e4,
+         "Vth (V)":0.31,"Ion/Ioff":2.7e6,"gm (µS/µm)":2700,"Rsd (Ω·µm)":75,"Cgg (fF/µm)":1.1,"Delay (ps)":1.1},
         {"Node":"5nm","Lg (nm)":12,"Hfin (nm)":45,"EOT (nm)":0.55,"ID (A/cm²)":2.0e4,
          "Vth (V)":0.30,"Ion/Ioff":3.0e6,"gm (µS/µm)":2800,"Rsd (Ω·µm)":70,"Cgg (fF/µm)":1.2,"Delay (ps)":1.0},
         {"Node":"4nm","Lg (nm)":9,"Hfin (nm)":50,"EOT (nm)":0.50,"ID (A/cm²)":2.3e4,
@@ -56,70 +63,16 @@ pdf_options = {
 }
 
 # ---------------------------
-# Utility: Plot Scaling Plots
+# Utility: Scaling Plots
 # ---------------------------
 def plot_scaling(df):
     fig, axs = plt.subplots(1,3,figsize=(15,4))
     
     # Lg vs gm
     axs[0].plot(df["Lg (nm)"], df["gm (µS/µm)"], 'o-', color='blue')
-    axs[0].set_xlabel("Lg (nm)"); axs[0].set_ylabel("gm (µS/µm)")
+    axs[0].set_xlabel("Lg (nm)")
+    axs[0].set_ylabel("gm (µS/µm)")
+    axs[0].grid(True)
     
     # Vth vs Ion/Ioff
-    axs[1].plot(df["Vth (V)"], df["Ion/Ioff"], 's-', color='green')
-    axs[1].set_xlabel("Vth (V)"); axs[1].set_ylabel("Ion/Ioff")
-    
-    # Delay vs Cgg
-    axs[2].plot(df["Delay (ps)"], df["Cgg (fF/µm)"], 'd-', color='red')
-    axs[2].set_xlabel("Delay (ps)"); axs[2].set_ylabel("Cgg (fF/µm)")
-    
-    plt.tight_layout()
-    st.pyplot(fig)
-
-# ---------------------------
-# Utility: Id-Vg Curve Plot (Synthetic)
-# ---------------------------
-def plot_id_vg_synthetic():
-    Vg = np.linspace(0,1,100)
-    currents = {
-        "7nm": 1.5e-4*(np.exp(5*Vg)-1),
-        "5nm": 1.8e-4*(np.exp(5*Vg)-1),
-        "4nm": 2.0e-4*(np.exp(5*Vg)-1),
-        "3nm": 2.2e-4*(np.exp(5*Vg)-1),
-        "2nm": 2.5e-4*(np.exp(5*Vg)-1)
-    }
-    fig, ax = plt.subplots()
-    for node, Id in currents.items():
-        ax.plot(Vg, Id, label=f"{node}")
-    ax.set_xlabel("Vg (V)")
-    ax.set_ylabel("Id (A/cm²)")
-    ax.set_title("Synthetic Id–Vg Curves")
-    ax.legend()
-    st.pyplot(fig)
-
-# ---------------------------
-# Option Handlers
-# ---------------------------
-if option == "Synthetic Demo":
-    st.header("Synthetic FinFET Demo")
-    df = synthetic_parameters()
-    st.subheader("Parameters Table")
-    st.dataframe(df)
-    st.subheader("Scaling Plots")
-    plot_scaling(df)
-    st.subheader("Synthetic Id–Vg Curves")
-    plot_id_vg_synthetic()
-
-elif option == "Local PDF":
-    st.header("Local PDF Extraction")
-    pdf_choice = st.sidebar.selectbox("Select PDF:", list(pdf_options.keys()))
-    pdf_file = pdf_options[pdf_choice]
-    st.write(f"Selected PDF: {pdf_file}")
-    st.warning("Automatic curve extraction from PDF is not yet implemented in this demo. Tables may be random text depending on PDF quality.")
-
-elif option == "Browse PDF":
-    st.header("Browse and Upload PDF")
-    uploaded_file = st.sidebar.file_uploader("Choose a PDF", type="pdf")
-    if uploaded_file is not None:
-        st.write(f"Uploaded PDF: {uploaded_file.name}")
-        st.warning("Automatic curve extraction from PDF is not yet implemented in this demo. Tables may be random text depending on PDF quality.")
+    axs[1
