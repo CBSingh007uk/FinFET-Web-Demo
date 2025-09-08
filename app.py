@@ -1,52 +1,28 @@
+# finfet_streamlit_demo.py
 import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import io
 from PIL import Image
-import camelot
+import cv2
 import os
+from pdf2image import convert_from_path
+import camelot
 
-# ------------------ CONFIG ------------------
-st.set_page_config(page_title="FinFET Data Extractor", layout="wide")
-
+# ------------------------
 # Logo
-st.sidebar.image("logo.png", use_column_width=True)  # Replace with your logo path
+# ------------------------
+st.set_page_config(page_title="FinFET Data Extractor", layout="wide")
+st.image("pdfs/logo.png", width=200)
 
-# ------------------ Synthetic Demo Dataset ------------------
-def synthetic_parameters():
-    """Expanded IRDS-aligned synthetic FinFET dataset for 3–5 nm nodes"""
-    data = [
-        {"Node": "7 nm", "Lg (nm)": 15, "Hfin (nm)": 40, "EOT (nm)": 0.60,
-         "ID (A/cm²)": 1.8e4, "Vth (V)": 0.32, "Ion/Ioff": 2.5e6,
-         "gm (µS/µm)": 2500, "Rsd (Ω·µm)": 80, "Cgg (fF/µm)": 1.0, "Delay (ps)": 1.2},
-        {"Node": "6 nm", "Lg (nm)": 13, "Hfin (nm)": 42, "EOT (nm)": 0.57,
-         "ID (A/cm²)": 1.9e4, "Vth (V)": 0.31, "Ion/Ioff": 2.8e6,
-         "gm (µS/µm)": 2600, "Rsd (Ω·µm)": 75, "Cgg (fF/µm)": 1.1, "Delay (ps)": 1.1},
-        {"Node": "5 nm", "Lg (nm)": 12, "Hfin (nm)": 45, "EOT (nm)": 0.55,
-         "ID (A/cm²)": 2.0e4, "Vth (V)": 0.30, "Ion/Ioff": 3.0e6,
-         "gm (µS/µm)": 2800, "Rsd (Ω·µm)": 70, "Cgg (fF/µm)": 1.2, "Delay (ps)": 1.0},
-        {"Node": "4 nm", "Lg (nm)": 9, "Hfin (nm)": 50, "EOT (nm)": 0.50,
-         "ID (A/cm²)": 2.3e4, "Vth (V)": 0.28, "Ion/Ioff": 4.0e6,
-         "gm (µS/µm)": 3100, "Rsd (Ω·µm)": 60, "Cgg (fF/µm)": 1.4, "Delay (ps)": 0.8},
-        {"Node": "3 nm", "Lg (nm)": 7, "Hfin (nm)": 55, "EOT (nm)": 0.48,
-         "ID (A/cm²)": 2.6e4, "Vth (V)": 0.25, "Ion/Ioff": 5.0e6,
-         "gm (µS/µm)": 3400, "Rsd (Ω·µm)": 50, "Cgg (fF/µm)": 1.6, "Delay (ps)": 0.6},
-        {"Node": "2 nm", "Lg (nm)": 5, "Hfin (nm)": 60, "EOT (nm)": 0.45,
-         "ID (A/cm²)": 3.0e4, "Vth (V)": 0.22, "Ion/Ioff": 6.0e6,
-         "gm (µS/µm)": 3800, "Rsd (Ω·µm)": 40, "Cgg (fF/µm)": 1.8, "Delay (ps)": 0.5},
-    ]
-    df = pd.DataFrame(data)
+# ------------------------
+# Sidebar Options
+# ------------------------
+st.sidebar.title("FinFET Demo Options")
 
-    # Synthetic Id–Vg curves: assume simple exponential model
-    vg = np.linspace(0, 1, 50)
-    curves = {}
-    for _, row in df.iterrows():
-        id_curve = row["ID (A/cm²)"] / (1 + np.exp(-(vg - row["Vth (V)"])/0.05))
-        curves[row["Node"]] = id_curve
-    return df, vg, curves
+demo_option = st.sidebar.radio("Choose Input Option:",
+                               ["Synthetic Demo", "Predefined PDF", "Browse PDF"])
 
-# ------------------ Predefined PDFs ------------------
 pdf_options = {
     "Arxiv 1905.11207 v3": "pdfs/1905.11207v3.pdf",
     "Arxiv 2007.13168 v4": "pdfs/2007.13168v4.pdf",
@@ -55,82 +31,130 @@ pdf_options = {
     "Arxiv 2501.15190 v1": "pdfs/2501.15190v1.pdf"
 }
 
-# ------------------ Sidebar ------------------
-st.sidebar.title("FinFET Demo Options")
-mode = st.sidebar.radio("Select Mode", ["Synthetic Demo", "Local Predefined PDF", "Browse PDF"])
-
-selected_pdf_path = None
 uploaded_file = None
+selected_pdf = None
 
-if mode == "Local Predefined PDF":
-    pdf_name = st.sidebar.selectbox("Select PDF", list(pdf_options.keys()))
-    selected_pdf_path = pdf_options[pdf_name]
-elif mode == "Browse PDF":
-    uploaded_file = st.sidebar.file_uploader("Upload a PDF", type=["pdf"])
+if demo_option == "Predefined PDF":
+    selected_pdf = st.sidebar.selectbox("Select PDF", list(pdf_options.keys()))
+elif demo_option == "Browse PDF":
+    uploaded_file = st.sidebar.file_uploader("Upload PDF", type=["pdf"])
 
-if st.sidebar.button("Extract / Run"):
+# ------------------------
+# Synthetic Demo Dataset
+# ------------------------
+def synthetic_parameters():
+    """Enhanced synthetic FinFET dataset"""
+    data = [
+        {"Node":"7 nm","Lg (nm)":15,"Hfin (nm)":40,"EOT (nm)":0.6,"ID (A/cm²)":1.8e4,"Vth (V)":0.32,"Ion/Ioff":2.5e6,"gm (µS/µm)":2600},
+        {"Node":"5 nm","Lg (nm)":12,"Hfin (nm)":45,"EOT (nm)":0.55,"ID (A/cm²)":2.0e4,"Vth (V)":0.30,"Ion/Ioff":3.0e6,"gm (µS/µm)":2800},
+        {"Node":"4 nm","Lg (nm)":9,"Hfin (nm)":50,"EOT (nm)":0.50,"ID (A/cm²)":2.3e4,"Vth (V)":0.28,"Ion/Ioff":4.0e6,"gm (µS/µm)":3100},
+        {"Node":"3 nm","Lg (nm)":7,"Hfin (nm)":55,"EOT (nm)":0.48,"ID (A/cm²)":2.6e4,"Vth (V)":0.25,"Ion/Ioff":5.0e6,"gm (µS/µm)":3400},
+        {"Node":"2 nm","Lg (nm)":5,"Hfin (nm)":60,"EOT (nm)":0.45,"ID (A/cm²)":2.9e4,"Vth (V)":0.22,"Ion/Ioff":6.0e6,"gm (µS/µm)":3600},
+    ]
+    return pd.DataFrame(data)
 
-    if mode == "Synthetic Demo":
-        st.subheader("Synthetic Demo Parameters")
-        df, vg, curves = synthetic_parameters()
-        st.dataframe(df)
+# ------------------------
+# Automatic Id-Vg Curve Detection
+# ------------------------
+def extract_id_vg_from_image(img_pil):
+    """Detect curves in an image automatically and return Vg vs Id"""
+    img = np.array(img_pil.convert("RGB"))
+    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    gray = cv2.GaussianBlur(gray, (3,3),0)
+    edges = cv2.Canny(gray,50,150)
+    contours,_ = cv2.findContours(edges.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    curves = []
+    for cnt in contours:
+        if cv2.contourArea(cnt) < 50:
+            continue
+        xs, ys = cnt[:,0,0], cnt[:,0,1]
+        # invert y-axis for plotting
+        ys = np.max(ys) - ys
+        curves.append({"x": xs, "y": ys})
+    return curves
 
-        # ------------------ Line Charts for Scaling ------------------
-        fig, ax = plt.subplots(1, 2, figsize=(12, 5))
-        ax[0].plot(df["Lg (nm)"], df["gm (µS/µm)"], marker='o')
-        ax[0].set_xlabel("Lg (nm)")
-        ax[0].set_ylabel("gm (µS/µm)")
-        ax[0].set_title("Lg vs gm (Line Chart)")
-        ax[0].grid(True)
+# ------------------------
+# Display Scaling Plots
+# ------------------------
+def plot_scaling(df):
+    st.subheader("Scaling Plots")
+    fig, ax = plt.subplots(2,2, figsize=(12,8))
+    # Lg vs gm
+    ax[0,0].plot(df["Lg (nm)"], df["gm (µS/µm)"], marker='o')
+    ax[0,0].set_xlabel("Lg (nm)"); ax[0,0].set_ylabel("gm (µS/µm)")
+    ax[0,0].set_title("Lg vs gm")
+    # Vth vs Ion/Ioff
+    ax[0,1].plot(df["Vth (V)"], df["Ion/Ioff"], marker='o', color='green')
+    ax[0,1].set_xlabel("Vth (V)"); ax[0,1].set_ylabel("Ion/Ioff")
+    ax[0,1].set_title("Vth vs Ion/Ioff")
+    # ID vs Lg
+    ax[1,0].plot(df["Lg (nm)"], df["ID (A/cm²)"], marker='o', color='red')
+    ax[1,0].set_xlabel("Lg (nm)"); ax[1,0].set_ylabel("ID (A/cm²)")
+    ax[1,0].set_title("ID vs Lg")
+    # gm vs Ion/Ioff
+    ax[1,1].plot(df["gm (µS/µm)"], df["Ion/Ioff"], marker='o', color='orange')
+    ax[1,1].set_xlabel("gm (µS/µm)"); ax[1,1].set_ylabel("Ion/Ioff")
+    ax[1,1].set_title("gm vs Ion/Ioff")
+    plt.tight_layout()
+    st.pyplot(fig)
 
-        ax[1].plot(df["Vth (V)"], df["Ion/Ioff"], marker='s', color='green')
-        ax[1].set_xlabel("Vth (V)")
-        ax[1].set_ylabel("Ion/Ioff")
-        ax[1].set_title("Vth vs Ion/Ioff (Line Chart)")
-        ax[1].grid(True)
-        st.pyplot(fig)
+# ------------------------
+# Main Display
+# ------------------------
+if demo_option == "Synthetic Demo":
+    df = synthetic_parameters()
+    st.subheader("Synthetic FinFET Dataset")
+    st.dataframe(df)
+    plot_scaling(df)
+    # Generate synthetic Id-Vg curve
+    st.subheader("Synthetic Id-Vg Curves")
+    Vg = np.linspace(0,1,50)
+    for idx, row in df.iterrows():
+        Id = row["ID (A/cm²)"] * (1-np.exp(-Vg/row["Vth (V)"]))
+        st.line_chart(pd.DataFrame({"Vg": Vg, f"Id Node {row['Node']}": Id}).set_index("Vg"))
 
-        # ------------------ Id–Vg Curves ------------------
-        st.subheader("Synthetic Id–Vg Curves")
-        fig2, ax2 = plt.subplots(figsize=(8,5))
-        for node, id_curve in curves.items():
-            ax2.plot(vg, id_curve, label=f"{node} Node")
-        ax2.set_xlabel("Vg (V)")
-        ax2.set_ylabel("Id (A/cm²)")
-        ax2.set_title("Id–Vg Curves (Synthetic)")
-        ax2.legend()
-        ax2.grid(True)
-        st.pyplot(fig2)
+elif demo_option == "Predefined PDF" or demo_option == "Browse PDF":
+    if demo_option == "Predefined PDF" and selected_pdf:
+        pdf_path = pdf_options[selected_pdf]
+    elif demo_option == "Browse PDF" and uploaded_file:
+        pdf_path = uploaded_file
+    else:
+        pdf_path = None
 
-        # ------------------ Download Excel ------------------
-        towrite = io.BytesIO()
-        df.to_excel(towrite, index=False, engine='openpyxl')
-        st.download_button("⬇️ Download Excel", towrite.getvalue(), "synthetic_finfet.xlsx")
-
-    elif mode in ["Local Predefined PDF", "Browse PDF"]:
-        # Determine PDF path
-        if uploaded_file is not None:
-            pdf_path = uploaded_file
-        else:
-            pdf_path = selected_pdf_path
-            if not os.path.exists(pdf_path):
-                st.error(f"PDF not found: {pdf_path}")
-                st.stop()
-
-        st.subheader("PDF Extraction Results")
-
-        # ------------------ Table Extraction ------------------
+    if pdf_path:
+        st.subheader("PDF Processing Results")
+        # Convert PDF to images
         try:
-            tables = camelot.read_pdf(pdf_path, pages='all', flavor='stream')
-            if tables:
-                for i, t in enumerate(tables):
-                    st.write(f"Table {i+1}")
-                    st.dataframe(t.df)
+            if isinstance(pdf_path, str):
+                pages = convert_from_path(pdf_path, dpi=300)
             else:
-                st.warning("No tables detected. Try clearer PDFs or different flavor in Camelot.")
+                pages = convert_from_path(pdf_path, dpi=300, first_page=0)
         except Exception as e:
-            st.error(f"Table extraction failed: {e}")
+            st.error(f"PDF to Image conversion failed: {e}")
+            pages = []
 
-        # ------------------ Id-Vg Curve Digitization ------------------
-        st.info("Id–Vg curve extraction not implemented for PDF mode in this demo.")
-        st.warning("Interactive curve extraction from multi-page PDFs requires OpenCV and advanced processing.")
+        all_curves = []
+        for i, img in enumerate(pages):
+            st.markdown(f"**Page {i+1}**")
+            curves = extract_id_vg_from_image(img)
+            if curves:
+                st.success(f"Detected {len(curves)} curve(s) automatically")
+                for j,c in enumerate(curves):
+                    df_curve = pd.DataFrame({"Vg (a.u.)": c["x"], "Id (a.u.)": c["y"]})
+                    st.line_chart(df_curve.set_index("Vg (a.u.)"))
+            else:
+                st.warning("No curves detected automatically. PDF quality may be low or axes not clear.")
+
+        # Table extraction with Camelot
+        if isinstance(pdf_path, str):
+            try:
+                tables = camelot.read_pdf(pdf_path, pages="all", flavor="stream")
+                st.subheader("Extracted Tables")
+                if tables:
+                    for ti, table in enumerate(tables):
+                        st.write(f"Table {ti+1}")
+                        st.dataframe(table.df)
+                else:
+                    st.warning("No tables detected. Try clearer PDFs.")
+            except Exception as e:
+                st.warning(f"Table extraction failed: {e}")
