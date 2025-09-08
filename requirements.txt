@@ -9,7 +9,6 @@ pdf2image
 easyocr
 opencv-python-headless
 pytesseract
-fitz
 pdfplumber
 openpyxl
 camelot-py[cv]
