@@ -13,3 +13,4 @@ pytesseract
 fitz
 pdfplumber
 openpyxl
+camelot-py[cv]
