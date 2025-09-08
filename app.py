@@ -5,6 +5,8 @@ import os
 import re
 from PIL import Image
 import pytesseract
+import matplotlib.pyplot as plt
+import numpy as np
 
 # Optional dependencies
 try:
@@ -24,20 +26,16 @@ try:
     import cv2
 except ModuleNotFoundError:
     cv2 = None
-import numpy as np
 
 # ---------------------- PDF Options ----------------------
 pdf_options = {
     "Arxiv 1905.11207 v3": "pdfs/1905.11207v3.pdf",
     "Arxiv 2007.13168 v4": "pdfs/2007.13168v4.pdf",
-    "Arxiv 2007.14448 v1": "pdfs/2007.14448v1.pdf",
-    "Arxiv 2407.18187 v1": "pdfs/2407.18187v1.pdf",
-    "Arxiv 2501.15190 v1": "pdfs/2501.15190v1.pdf"
 }
 
 st.set_page_config(page_title="FinFET Extractor", layout="wide")
-st.title("📄 FinFET Parameter Extractor & Curve Digitizer")
-st.write("Select a PDF or upload your own for multi-page extraction, table parsing, and Id–Vg digitization.")
+st.title("📄 FinFET Parameter & Curve Extractor")
+st.write("Extract parameters, detect tables, and digitize Id–Vg curves from PDFs.")
 
 # ---------------------- Sidebar ----------------------
 st.sidebar.header("PDF Selection")
@@ -77,6 +75,9 @@ def extract_tables_from_pdf(path):
         try:
             tbs = camelot.read_pdf(path, pages='all', flavor='lattice')
             tables.extend([t.df for t in tbs if not t.df.empty])
+            if not tables:
+                tbs = camelot.read_pdf(path, pages='all', flavor='stream')
+                tables.extend([t.df for t in tbs if not t.df.empty])
         except:
             pass
     return tables
@@ -92,24 +93,47 @@ def ocr_pdf_page(page_image):
     text = pytesseract.image_to_string(img_pil)
     return text
 
+# ---------------------- Id–Vg Digitization ----------------------
+def digitize_idvg(image_pil):
+    img = np.array(image_pil.convert("RGB"))
+    if cv2 is None:
+        st.warning("OpenCV not available, skipping curve extraction.")
+        return None
+    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    edges = cv2.Canny(gray, 50, 150)
+    ys, xs = np.where(edges > 0)
+    if len(xs) == 0:
+        return None
+    # simple scatter: map pixel to normalized coordinates
+    xs_norm = (xs - xs.min()) / (xs.max() - xs.min())
+    ys_norm = (ys - ys.min()) / (ys.max() - ys.min())
+    return xs_norm, ys_norm
+
 def extract_from_pdf(pdf_file):
     pages_data = []
     tables_all = []
+    curves_all = []
 
+    # Open PDF
+    pdf_obj = None
     if pdfplumber and hasattr(pdf_file, "read"):
         pdf_obj = pdfplumber.open(pdf_file)
     elif pdfplumber and isinstance(pdf_file, str):
         pdf_obj = pdfplumber.open(pdf_file)
-    else:
-        pdf_obj = None
 
     if pdf_obj:
         for i, page in enumerate(pdf_obj.pages, start=1):
             text = page.extract_text() or ""
             params = extract_params_from_text(text)
             pages_data.append({"page": i, **params})
+
+            # Curve extraction from images
+            if page.images:
+                img_obj = page.to_image(resolution=200).original
+                curves = digitize_idvg(img_obj)
+                if curves:
+                    curves_all.append({"page": i, "x": curves[0], "y": curves[1]})
     else:
-        # fallback: first page OCR
         if hasattr(pdf_file, "read"):
             img = Image.open(pdf_file)
         else:
@@ -117,17 +141,20 @@ def extract_from_pdf(pdf_file):
         text = ocr_pdf_page(img)
         params = extract_params_from_text(text)
         pages_data.append({"page": 1, **params})
+        curves = digitize_idvg(img)
+        if curves:
+            curves_all.append({"page": 1, "x": curves[0], "y": curves[1]})
 
     # table extraction
     if isinstance(pdf_file, str):
         tables_all = extract_tables_from_pdf(pdf_file)
 
-    return pd.DataFrame(pages_data), tables_all
+    return pd.DataFrame(pages_data), tables_all, curves_all
 
-# ---------------------- Button ----------------------
-if st.button("🔍 Extract Parameters & Tables"):
+# ---------------------- Extraction Button ----------------------
+if st.button("🔍 Extract Parameters, Tables & Curves"):
     try:
-        df_params, tables = extract_from_pdf(pdf_path)
+        df_params, tables, curves = extract_from_pdf(pdf_path)
         st.subheader("Extracted Parameters")
         st.dataframe(df_params, use_container_width=True)
 
@@ -147,7 +174,21 @@ if st.button("🔍 Extract Parameters & Tables"):
                 st.write(f"Table {i}")
                 st.dataframe(t)
         else:
-            st.info("No tables detected.")
+            st.info("No tables detected. Try enabling 'stream' flavor in Camelot or upload clearer PDFs.")
+
+        # Plot extracted curves
+        if curves:
+            st.subheader("Digitized Id–Vg Curves")
+            fig, ax = plt.subplots()
+            for c in curves:
+                ax.plot(c['x'], c['y'], label=f"Page {c['page']}")
+            ax.set_xlabel("Vg (normalized)")
+            ax.set_ylabel("Id (normalized)")
+            ax.set_title("Digitized Id–Vg Curves")
+            ax.legend()
+            st.pyplot(fig)
+        else:
+            st.info("No curves detected.")
 
     except Exception as e:
         st.error(f"Extraction failed: {e}")
