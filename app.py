@@ -152,7 +152,7 @@ elif option == "50 SMA Crossover Analysis":
                                 st.write(f"- Avg Max Gain: {row['avg_max_gain']:.2f}%")
                                 st.write(f"- Avg Max Drawdown: {row['avg_max_drawdown']:.2f}%")
                                 st.write(f"- Suggested Stop Loss: {row['avg_suggested_stoploss']:.2f}%")
-                                if row['avg_days_to_recovery'] is not None and not np.isnan(row['avg_days_to_recovery']):
+                                if row['avg_days_to_recovery'] is not None and not pd.isna(row['avg_days_to_recovery']):
                                     st.write(f"- Avg Days to Recovery: {row['avg_days_to_recovery']:.2f}")
                                 else:
                                     st.write(f"- Avg Days to Recovery: N/A")

@@ -63,6 +63,16 @@ class SMACrossoverAnalyzer:
         """
         Generate synthetic S&P 500-like data for demonstration
         
+        This method creates synthetic market data with characteristics similar to the S&P 500:
+        - Realistic price levels (starting around 3000)
+        - Upward trend (~0.03% per period)
+        - Market volatility (~1.5%)
+        - Cyclical patterns to simulate market cycles
+        
+        Note: This synthetic data is for testing and demonstration purposes only.
+        It does not represent actual market conditions and should not be used for
+        real trading decisions.
+        
         Args:
             interval: Data interval
         
@@ -97,7 +107,9 @@ class SMACrossoverAnalyzer:
         actual_periods = len(dates)
         
         # Generate synthetic price data with realistic S&P 500 characteristics
-        np.random.seed(42)  # For reproducibility
+        # Note: Using fixed seed for reproducibility in testing
+        # Different intervals will produce different patterns
+        np.random.seed(42 + hash(interval) % 1000)  # Vary seed by interval
         
         # Start at a realistic S&P 500 price
         initial_price = 3000

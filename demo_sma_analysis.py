@@ -4,7 +4,12 @@ Demo script to showcase the SMA Crossover Analysis output
 """
 
 import sys
-sys.path.insert(0, '/home/runner/work/FinFET-Web-Demo/FinFET-Web-Demo')
+import os
+import pandas as pd
+
+# Add parent directory to path for imports
+script_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, script_dir)
 
 from sma_crossover_analysis import SMACrossoverAnalyzer, format_analysis_table
 
@@ -101,5 +106,4 @@ def main():
         print("❌ No results generated. Please check the data and try again.")
 
 if __name__ == "__main__":
-    import pandas as pd
     main()
