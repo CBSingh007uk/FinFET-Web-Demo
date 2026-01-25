@@ -70,6 +70,12 @@ if option == "Synthetic Demo":
 
 elif option == "50 SMA Crossover Analysis":
     st.header("50-Period SMA Crossover Analysis - S&P 500 Index")
+    
+    st.info("""
+    **Data Source Notice:** This analysis attempts to fetch real S&P 500 data from Yahoo Finance. 
+    If the data is unavailable (e.g., due to network restrictions), synthetic demo data will be used instead.
+    """)
+    
     st.write("Analysis of price crossovers with 50-period Simple Moving Average on S&P 500 index")
     
     # Configuration options
